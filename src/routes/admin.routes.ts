@@ -10,7 +10,7 @@ import { authorizeRole } from "../middlewares/authorizeRole";
 
 const router = Router();
 
-router.get("/", authenticate, getAllAdmins);
+router.get("/", authenticate, authorizeRole(["SUPERADMIN"]), getAllAdmins);
 router.post("/", authenticate, authorizeRole(["SUPERADMIN"]), createAdmin);
 router.put("/:id", authenticate, authorizeRole(["SUPERADMIN"]), updateAdmin);
 router.delete("/:id", authenticate, authorizeRole(["SUPERADMIN"]), deleteAdmin);

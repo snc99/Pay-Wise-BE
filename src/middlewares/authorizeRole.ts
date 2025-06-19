@@ -8,7 +8,11 @@ export const authorizeRole = (allowedRoles: string[]) => {
     next: NextFunction
   ): void => {
     if (!req.user || !allowedRoles.includes(req.user.role)) {
-      res.status(403).json({ message: "Akses ditolak" });
+      res
+        .status(403)
+        .json({
+          message: "Akses ditolak, hanya Super Admin yang dapat mengakses",
+        });
       return;
     }
 

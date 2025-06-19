@@ -1,6 +1,7 @@
 // controllers/user.controller.ts
 import { Request, Response } from "express";
 import prisma from "../prisma/client";
+import { AuthenticatedRequest } from "../middlewares/auth.middleware";
 
 export const getAllUsers = async (
   req: Request,
@@ -71,7 +72,10 @@ export const createUser = async (
   }
 };
 
-export const updateUser = async (req: Request, res: Response): Promise<void> => {
+export const updateUser = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   const { id } = req.params;
   const { name, phone, address } = req.body;
 
@@ -112,7 +116,10 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
   }
 };
 
-export const deleteUser = async (req: Request, res: Response): Promise<void> => {
+export const deleteUser = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   const { id } = req.params;
 
   try {
@@ -141,6 +148,37 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
     res.status(500).json({
       success: false,
       message: "Terjadi kesalahan saat menghapus user",
+    });
+  }
+};
+
+export const searchUsers = async (req: AuthenticatedRequest, res: Response) => {
+  const query = (req.query.query as string) || "";
+
+  try {
+    const users = await prisma.user.findMany({
+      where: {
+        name: {
+          contains: query,
+          mode: "insensitive",
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+      take: 10, 
+    });
+
+    res.json({
+      success: true,
+      data: users,
+    });
+  } catch (error) {
+    console.error("Gagal mencari user:", error);
+    res.status(500).json({
+      success: false,
+      message: "Terjadi kesalahan saat mencari user",
     });
   }
 };

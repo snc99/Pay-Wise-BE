@@ -9,12 +9,6 @@ export const getAllAdmins = async (
   req: AuthenticatedRequest,
   res: Response
 ) => {
-  if (req.user?.role !== "SUPERADMIN") {
-    res
-      .status(403)
-      .json({ message: "Hanya SUPERADMIN yang dapat melihat daftar admin" });
-  }
-
   const page = parseInt(req.query.page as string) || 1;
   const search = (req.query.search as string) || "";
   const limit = 7;
@@ -80,12 +74,6 @@ export const createAdmin = async (req: AuthenticatedRequest, res: Response) => {
     });
   }
 
-  if (req.user?.role !== "SUPERADMIN") {
-    res.status(403).json({
-      message: "Hanya SUPERADMIN yang dapat membuat admin baru",
-    });
-  }
-
   const existing = await prisma.admin.findUnique({ where: { username } });
   if (existing) {
     res.status(409).json({ message: "Username sudah terdaftar" });
@@ -119,12 +107,6 @@ export const createAdmin = async (req: AuthenticatedRequest, res: Response) => {
 export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { name, email, username, role, password } = req.body;
-
-  if (req.user?.role !== "SUPERADMIN") {
-    res.status(403).json({
-      message: "Hanya SUPERADMIN yang dapat mengedit admin",
-    });
-  }
 
   try {
     const existingAdmin = await prisma.admin.findUnique({ where: { id } });
@@ -188,14 +170,6 @@ export const deleteAdmin = async (
 ): Promise<void> => {
   const { id } = req.params;
 
-  if (req.user?.role !== "SUPERADMIN") {
-    res.status(403).json({
-      success: false,
-      message: "Hanya SUPERADMIN yang dapat menghapus admin",
-    });
-    return;
-  }
-
   try {
     const admin = await prisma.admin.findUnique({ where: { id } });
 
@@ -207,7 +181,7 @@ export const deleteAdmin = async (
       return;
     }
 
-    if (req.user.id === id) {
+    if (req.user?.id === id) {
       res.status(400).json({
         success: false,
         message: "Anda tidak dapat menghapus akun Anda sendiri",
