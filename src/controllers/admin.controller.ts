@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
-import { Request, Response } from "express";
+import { Response } from "express";
+import { redis } from "../utils/redis";
 import prisma from "../prisma/client";
 import { Prisma } from "@prisma/client";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware"; // pastikan path sesuai
@@ -56,6 +57,7 @@ export const getAllAdmins = async (
     ]);
 
     res.status(200).json({
+      success: true,
       data: admins,
       pagination: {
         currentPage: page,
@@ -102,10 +104,13 @@ export const createAdmin = async (req: AuthenticatedRequest, res: Response) => {
   });
 
   res.status(201).json({
+    success: true,
     message: "Admin berhasil dibuat",
     data: {
       id: newAdmin.id,
+      name: newAdmin.name,
       username: newAdmin.username,
+      email: newAdmin.email,
       role: newAdmin.role,
     },
   });
@@ -115,7 +120,6 @@ export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { name, email, username, role, password } = req.body;
 
-  // Cek role: hanya SUPERADMIN yang boleh
   if (req.user?.role !== "SUPERADMIN") {
     res.status(403).json({
       message: "Hanya SUPERADMIN yang dapat mengedit admin",
@@ -128,7 +132,6 @@ export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
       res.status(404).json({ message: "Admin tidak ditemukan" });
     }
 
-    // Cek duplikat email/username
     const duplicate = await prisma.admin.findFirst({
       where: {
         AND: [
@@ -141,19 +144,20 @@ export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
     });
 
     if (duplicate) {
-      res
-        .status(409)
-        .json({
-          message: "Email atau username sudah digunakan oleh admin lain",
-        });
+      res.status(409).json({
+        message: "Email atau username sudah digunakan oleh admin lain",
+      });
     }
 
-    // Siapkan data untuk update
     const updateData: any = { name, email, username, role };
 
+    // Jika password ingin diubah
     if (password) {
       const hashed = await bcrypt.hash(password, 10);
       updateData.password = hashed;
+
+      // ❌ Hapus token dari Redis (logout paksa)
+      await redis.del(`token:${id}`);
     }
 
     const updated = await prisma.admin.update({
@@ -162,17 +166,71 @@ export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
     });
 
     res.json({
+      success: true,
       message: "Admin berhasil diperbarui",
       data: {
-        id: updated.id,
-        name: updated.name,
-        email: updated.email,
-        username: updated.username,
-        role: updated.role,
+        id: updateData.id,
+        name: updateData.name,
+        username: updateData.username,
+        email: updateData.email,
+        role: updateData.role,
       },
     });
   } catch (error) {
     console.error("Gagal update admin:", error);
     res.status(500).json({ message: "Gagal memperbarui admin" });
+  }
+};
+
+export const deleteAdmin = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  const { id } = req.params;
+
+  if (req.user?.role !== "SUPERADMIN") {
+    res.status(403).json({
+      success: false,
+      message: "Hanya SUPERADMIN yang dapat menghapus admin",
+    });
+    return;
+  }
+
+  try {
+    const admin = await prisma.admin.findUnique({ where: { id } });
+
+    if (!admin) {
+      res.status(404).json({
+        success: false,
+        message: "Admin tidak ditemukan",
+      });
+      return;
+    }
+
+    if (req.user.id === id) {
+      res.status(400).json({
+        success: false,
+        message: "Anda tidak dapat menghapus akun Anda sendiri",
+      });
+      return;
+    }
+
+    await prisma.admin.delete({ where: { id } });
+
+    res.json({
+      success: true,
+      message: "Berhasil",
+      data: {
+        id: admin.id,
+        name: admin.name,
+        email: admin.email,
+      },
+    });
+  } catch (error) {
+    console.error("Gagal menghapus admin:", error);
+    res.status(500).json({
+      success: false,
+      message: "Terjadi kesalahan saat menghapus admin",
+    });
   }
 };

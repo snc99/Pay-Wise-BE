@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   createAdmin,
+  deleteAdmin,
   getAllAdmins,
   updateAdmin,
 } from "../controllers/admin.controller";
@@ -12,6 +13,6 @@ const router = Router();
 router.get("/", authenticate, getAllAdmins);
 router.post("/", authenticate, authorizeRole(["SUPERADMIN"]), createAdmin);
 router.put("/:id", authenticate, authorizeRole(["SUPERADMIN"]), updateAdmin);
-// router.delete("/admin/:id", authenticate, authorizeRole(["SUPERADMIN"]), deleteAdmin);
+router.delete("/:id", authenticate, authorizeRole(["SUPERADMIN"]), deleteAdmin);
 
 export default router;
