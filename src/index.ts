@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import authRoutes from "./routes/auth.routes";
 import adminRoutes from "./routes/admin.routes";
+import userRoutes from "./routes/user.routes";
 
 dotenv.config();
 
@@ -10,6 +11,7 @@ app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/user", userRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: "Endpoint tidak ditemukan." });
