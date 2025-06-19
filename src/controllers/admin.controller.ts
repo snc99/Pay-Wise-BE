@@ -1,5 +1,5 @@
-import { Response } from "express";
 import bcrypt from "bcrypt";
+import { Request, Response } from "express";
 import prisma from "../prisma/client";
 import { Prisma } from "@prisma/client";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware"; // pastikan path sesuai
@@ -109,4 +109,70 @@ export const createAdmin = async (req: AuthenticatedRequest, res: Response) => {
       role: newAdmin.role,
     },
   });
+};
+
+export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { name, email, username, role, password } = req.body;
+
+  // Cek role: hanya SUPERADMIN yang boleh
+  if (req.user?.role !== "SUPERADMIN") {
+    res.status(403).json({
+      message: "Hanya SUPERADMIN yang dapat mengedit admin",
+    });
+  }
+
+  try {
+    const existingAdmin = await prisma.admin.findUnique({ where: { id } });
+    if (!existingAdmin) {
+      res.status(404).json({ message: "Admin tidak ditemukan" });
+    }
+
+    // Cek duplikat email/username
+    const duplicate = await prisma.admin.findFirst({
+      where: {
+        AND: [
+          { id: { not: id } },
+          {
+            OR: [{ email: email || "" }, { username: username || "" }],
+          },
+        ],
+      },
+    });
+
+    if (duplicate) {
+      res
+        .status(409)
+        .json({
+          message: "Email atau username sudah digunakan oleh admin lain",
+        });
+    }
+
+    // Siapkan data untuk update
+    const updateData: any = { name, email, username, role };
+
+    if (password) {
+      const hashed = await bcrypt.hash(password, 10);
+      updateData.password = hashed;
+    }
+
+    const updated = await prisma.admin.update({
+      where: { id },
+      data: updateData,
+    });
+
+    res.json({
+      message: "Admin berhasil diperbarui",
+      data: {
+        id: updated.id,
+        name: updated.name,
+        email: updated.email,
+        username: updated.username,
+        role: updated.role,
+      },
+    });
+  } catch (error) {
+    console.error("Gagal update admin:", error);
+    res.status(500).json({ message: "Gagal memperbarui admin" });
+  }
 };

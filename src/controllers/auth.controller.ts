@@ -5,9 +5,11 @@ import { Request, Response } from "express";
 import { redis } from "../utils/redis";
 import { generateToken } from "../utils/jwt";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";
+import { removeToken } from "../utils/removeToken";
 
 export const login = async (req: Request, res: Response): Promise<void> => {
   const { username, password } = req.body;
+
   if (!username || !password) {
     res.status(400).json({ message: "Username dan password wajib diisi." });
     return;
@@ -15,6 +17,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
   try {
     const admin = await prisma.admin.findUnique({ where: { username } });
+
     if (!admin) {
       res.status(401).json({ message: "Username atau password salah." });
       return;
@@ -26,11 +29,19 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // ✅ Buat token setelah validasi berhasil
     const token = generateToken({
       id: admin.id,
       role: admin.role,
       username: admin.username,
     });
+
+    // ✅ Hitung TTL dari token
+    const jwtDecoded = jwt.decode(token) as { exp: number };
+    const ttlInSeconds = jwtDecoded.exp - Math.floor(Date.now() / 1000);
+
+    // ✅ Simpan token ke Redis
+    await redis.set(`token:${admin.id}`, token, { ex: ttlInSeconds });
 
     res.status(200).json({
       message: "Login berhasil",
@@ -90,6 +101,11 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
     }
 
     await redis.set(`blacklist:${token}`, "true", { ex: ttlInSeconds });
+
+    const decodedUser = jwt.decode(token) as { id?: string };
+    if (decodedUser?.id) {
+      await removeToken(decodedUser.id);
+    }
 
     res.json({ message: "Logout berhasil" });
   } catch (error) {
