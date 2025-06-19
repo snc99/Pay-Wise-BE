@@ -1,6 +1,8 @@
-import { Request, Response } from "express";
 import prisma from "../prisma/client";
+import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import { Request, Response } from "express";
+import { redis } from "../utils/redis";
 import { generateToken } from "../utils/jwt";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";
 
@@ -59,4 +61,39 @@ export const getProfile = (req: AuthenticatedRequest, res: Response): void => {
     message: "Profil pengguna berhasil diambil",
     user,
   });
+};
+
+export const logout = async (req: Request, res: Response): Promise<void> => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    res.status(401).json({ message: "Token tidak ditemukan" });
+    return;
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const decoded = jwt.decode(token) as { exp?: number };
+
+    if (!decoded?.exp) {
+      res.status(400).json({ message: "Token tidak valid" });
+      return;
+    }
+
+    const nowInSeconds = Math.floor(Date.now() / 1000);
+    const ttlInSeconds = decoded.exp - nowInSeconds;
+
+    if (ttlInSeconds <= 0) {
+      res.status(400).json({ message: "Token sudah kedaluwarsa" });
+      return;
+    }
+
+    await redis.set(`blacklist:${token}`, "true", { ex: ttlInSeconds });
+
+    res.json({ message: "Logout berhasil" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Logout gagal" });
+  }
 };

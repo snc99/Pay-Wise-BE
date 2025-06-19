@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { Role } from "@prisma/client";
 import { verifyToken } from "../utils/jwt";
+import { redis } from "../utils/redis"; // <- pastikan ini benar path-nya
 
 export interface AuthenticatedUser {
   id: string;
@@ -12,11 +13,11 @@ export interface AuthenticatedRequest extends Request {
   user?: AuthenticatedUser;
 }
 
-export const authenticate = (
+export const authenticate = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-): void => {
+): Promise<void> => {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.split(" ")[1];
 
@@ -26,9 +27,16 @@ export const authenticate = (
   }
 
   try {
+    // ⛔ Cek apakah token sudah di-blacklist (logout)
+    const isBlacklisted = await redis.get(`blacklist:${token}`);
+    if (isBlacklisted) {
+      res.status(401).json({ message: "Token sudah logout" });
+      return;
+    }
+
     const decoded = verifyToken(token) as AuthenticatedUser;
 
-    // Pastikan decoded.role adalah salah satu dari enum Role
+    // Validasi role
     if (!Object.values(Role).includes(decoded.role)) {
       res.status(403).json({ message: "Role tidak valid" });
       return;

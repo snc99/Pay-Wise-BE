@@ -1,15 +1,3 @@
-// import jwt from "jsonwebtoken";
-
-// export const generateToken = (user: {
-//   id: string;
-//   role: string;
-//   username: string;
-// }) => {
-//   return jwt.sign(user, process.env.JWT_SECRET!, {
-//     expiresIn: "1h",
-//   });
-// };
-
 import jwt from "jsonwebtoken";
 
 // Definisikan tipe payload
@@ -22,7 +10,7 @@ export type JWTPayload = {
 // Fungsi untuk generate token
 export const generateToken = (user: JWTPayload): string => {
   return jwt.sign(user, process.env.JWT_SECRET!, {
-    expiresIn: "1h",
+    expiresIn: "15m",
   });
 };
 
