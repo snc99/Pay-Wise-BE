@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import prisma from "../prisma/client";
 import { paymentSchema } from "../validations/payment.schema";
+import { r } from "@upstash/redis/zmscore-DzNHSWxc";
 
 export const getPayments = async (req: Request, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
@@ -10,18 +11,21 @@ export const getPayments = async (req: Request, res: Response) => {
   const skip = (page - 1) * limit;
 
   try {
-    const where: Prisma.PaymentWhereInput = search
-      ? {
-          debt: {
-            user: {
-              name: {
-                contains: search,
-                mode: "insensitive",
+    const where: Prisma.PaymentWhereInput = {
+      deletedAt: null, // hanya payment yang belum dihapus
+      ...(search
+        ? {
+            debt: {
+              user: {
+                name: {
+                  contains: search,
+                  mode: "insensitive",
+                },
               },
             },
-          },
-        }
-      : {};
+          }
+        : {}),
+    };
 
     const allPayments = await prisma.payment.findMany({
       where,
@@ -106,7 +110,7 @@ export const getPayments = async (req: Request, res: Response) => {
       )
       .slice(skip, skip + limit);
 
-     res.status(200).json({
+    res.status(200).json({
       success: true,
       data: paginated,
       pagination: {
@@ -117,7 +121,7 @@ export const getPayments = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("GET /payment error:", error);
-     res.status(500).json({
+    res.status(500).json({
       success: false,
       message: "Gagal mengambil data pembayaran.",
     });
@@ -209,6 +213,106 @@ export const createPayment = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: "Terjadi kesalahan saat mencatat pembayaran.",
+    });
+  }
+};
+
+export const deletePayment = async (req: Request, res: Response) => {
+  const paymentId = req.params.id;
+
+  try {
+    // Ambil data payment termasuk relasi debt dan semua payments dari debt tsb
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        debt: {
+          include: {
+            payments: true,
+          },
+        },
+      },
+    });
+
+    if (!payment) {
+      res.status(404).json({
+        success: false,
+        message: "Payment tidak ditemukan.",
+      });
+      return;
+    }
+
+    // Hitung total yang sudah dibayar
+    const totalPaid = payment.debt.payments
+      .filter((p) => !p.deletedAt) // abaikan yg sudah dihapus
+      .reduce((sum, p) => sum + Number(p.amount), 0);
+
+    const debtAmount = Number(payment.debt.amount);
+    const remaining = debtAmount - totalPaid;
+
+    if (remaining !== 0) {
+      res.status(400).json({
+        success: false,
+        message: "Payment tidak bisa dihapus karena utang belum lunas.",
+      });
+    }
+
+    // Lakukan soft delete
+    await prisma.payment.update({
+      where: { id: paymentId },
+      data: {
+        deletedAt: new Date(),
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Payment berhasil dihapus (soft delete).",
+    });
+  } catch (error) {
+    console.error("DELETE /payment/:id error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Terjadi kesalahan saat menghapus payment.",
+    });
+  }
+};
+
+export const getDeletedPayments = async (req: Request, res: Response) => {
+  try {
+    const deletedPayments = await prisma.payment.findMany({
+      where: {
+        deletedAt: {
+          not: null,
+        },
+      },
+      orderBy: {
+        paidAt: "desc",
+      },
+      include: {
+        debt: {
+          select: {
+            id: true,
+            amount: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+     res.status(200).json({
+      success: true,
+      data: deletedPayments,
+    });
+  } catch (error) {
+    console.error("GET /payment/history error:", error);
+     res.status(500).json({
+      success: false,
+      message: "Gagal mengambil data histori pembayaran.",
     });
   }
 };

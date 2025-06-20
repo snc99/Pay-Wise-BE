@@ -1,10 +1,12 @@
 import express from "express";
-import { createPayment, getPayments } from "../controllers/payment.controller";
+import { createPayment, deletePayment, getDeletedPayments, getPayments } from "../controllers/payment.controller";
 
 const router = express.Router();
 
-router.post("/", createPayment);
 router.get("/", getPayments);
+router.post("/", createPayment);
+router.delete("/:id", deletePayment);
+router.get("/history", getDeletedPayments);
 
 
 export default router;

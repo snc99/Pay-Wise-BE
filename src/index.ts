@@ -5,17 +5,21 @@ import adminRoutes from "./routes/admin.routes";
 import userRoutes from "./routes/user.routes";
 import debtRoutes from "./routes/debt.routes";
 import paymentRoutes from "./routes/payment.routes";
+import "./cron/paymentCleaner";
+import pingRoutes from "./routes/ping.routes";
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
 
+app.use("/", pingRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/debt", debtRoutes);
 app.use("/api/payment", paymentRoutes);
+
 
 app.use((req, res) => {
   res.status(404).json({ message: "Endpoint tidak ditemukan." });
