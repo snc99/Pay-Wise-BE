@@ -124,7 +124,7 @@ export const deleteUser = async (req: Request, res: Response) => {
     const existingUser = await prisma.user.findUnique({ where: { id } });
 
     if (!existingUser) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         message: "User tidak ditemukan.",
       });
@@ -146,7 +146,7 @@ export const deleteUser = async (req: Request, res: Response) => {
     });
 
     if (hasUnpaidDebt) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         message:
           "User masih memiliki utang yang belum lunas, tidak dapat dihapus.",
