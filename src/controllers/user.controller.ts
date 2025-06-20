@@ -55,7 +55,7 @@ export const createUser = async (
 
     res.status(201).json({
       success: true,
-      message: "User berhasil dibuat",
+      message: `${newUser.name} berhasil ditambahkan`,
       data: {
         id: newUser.id,
         name: newUser.name,
@@ -104,7 +104,7 @@ export const updateUser = async (
 
     res.status(200).json({
       success: true,
-      message: "User berhasil diperbarui",
+      message: `${updated.name} berhasil diperbarui`,
       data: updated,
     });
   } catch (error) {
@@ -116,38 +116,55 @@ export const updateUser = async (
   }
 };
 
-export const deleteUser = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+export const deleteUser = async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
-    const user = await prisma.user.findUnique({ where: { id } });
+    // Cek apakah user ada
+    const existingUser = await prisma.user.findUnique({ where: { id } });
 
-    if (!user) {
-      res.status(404).json({
+    if (!existingUser) {
+      return res.status(404).json({
         success: false,
-        message: "User tidak ditemukan",
+        message: "User tidak ditemukan.",
       });
-      return;
     }
 
+    // Ambil semua utang user
+    const debts = await prisma.debt.findMany({
+      where: { userId: id },
+      include: { payments: true },
+    });
+
+    // Cek apakah semua utang sudah lunas
+    const hasUnpaidDebt = debts.some((debt) => {
+      const totalPaid = debt.payments.reduce(
+        (sum, p) => sum + Number(p.amount),
+        0
+      );
+      return totalPaid < Number(debt.amount);
+    });
+
+    if (hasUnpaidDebt) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "User masih memiliki utang yang belum lunas, tidak dapat dihapus.",
+      });
+    }
+
+    // Jika semua lunas, hapus user
     await prisma.user.delete({ where: { id } });
 
-    res.status(200).json({
+    res.json({
       success: true,
-      message: "User berhasil dihapus",
-      data: {
-        id: user.id,
-        name: user.name,
-      },
+      message: "User berhasil dihapus.",
     });
   } catch (error) {
     console.error("Gagal menghapus user:", error);
     res.status(500).json({
       success: false,
-      message: "Terjadi kesalahan saat menghapus user",
+      message: "Terjadi kesalahan saat menghapus user.",
     });
   }
 };
@@ -167,7 +184,7 @@ export const searchUsers = async (req: AuthenticatedRequest, res: Response) => {
         id: true,
         name: true,
       },
-      take: 10, 
+      take: 10,
     });
 
     res.json({

@@ -21,7 +21,7 @@ export const getAllAdmins = async (
             {
               name: {
                 contains: search,
-                mode: "insensitive", // pakai string literal di sini
+                mode: "insensitive", 
               },
             },
             {
@@ -76,7 +76,7 @@ export const createAdmin = async (req: AuthenticatedRequest, res: Response) => {
 
   const existing = await prisma.admin.findUnique({ where: { username } });
   if (existing) {
-    res.status(409).json({ message: "Username sudah terdaftar" });
+    res.status(409).json({ message: `Username ${username} sudah digunakan` });
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
@@ -93,7 +93,7 @@ export const createAdmin = async (req: AuthenticatedRequest, res: Response) => {
 
   res.status(201).json({
     success: true,
-    message: "Admin berhasil dibuat",
+    message: `${newAdmin.name} berhasil ditambahkan`,
     data: {
       id: newAdmin.id,
       name: newAdmin.name,
@@ -127,7 +127,7 @@ export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
 
     if (duplicate) {
       res.status(409).json({
-        message: "Email atau username sudah digunakan oleh admin lain",
+        message: `Username ${username} atau email ${email} sudah digunakan`,
       });
     }
 
@@ -149,7 +149,7 @@ export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
 
     res.json({
       success: true,
-      message: "Admin berhasil diperbarui",
+      message: `${updated.name} berhasil diperbarui`,
       data: {
         id: updateData.id,
         name: updateData.name,
@@ -193,7 +193,7 @@ export const deleteAdmin = async (
 
     res.json({
       success: true,
-      message: "Berhasil",
+      message: `${admin.name} berhasil dihapus`,
       data: {
         id: admin.id,
         name: admin.name,
