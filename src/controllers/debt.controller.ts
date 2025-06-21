@@ -1,9 +1,10 @@
 import { Request, Response } from "express";
 import prisma from "../prisma/client";
 import { Prisma } from "@prisma/client";
-import { debtSchema } from "../validations/debt.schema";
+import { debtSchema, deleteDebtParamsSchema } from "../validations/debt.schema";
+import { AuthenticatedRequest } from "../middlewares/auth.middleware";
 
-export const getAllDebts = async (req: Request, res: Response) => {
+export const getAllDebts = async (req: AuthenticatedRequest, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const search = (req.query.search as string) || "";
   const limit = 7;
@@ -54,7 +55,7 @@ export const getAllDebts = async (req: Request, res: Response) => {
   }
 };
 
-export const createDebt = async (req: Request, res: Response) => {
+export const createDebt = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const parsed = debtSchema.safeParse(req.body);
 
@@ -115,8 +116,18 @@ export const createDebt = async (req: Request, res: Response) => {
   }
 };
 
-export const deleteDebt = async (req: Request, res: Response) => {
-  const { id } = req.params;
+export const deleteDebt = async (req: AuthenticatedRequest, res: Response) => {
+  const parsed = deleteDebtParamsSchema.safeParse(req.params);
+
+  if (!parsed.success) {
+    res.status(400).json({
+      success: false,
+      message: parsed.error.errors[0].message,
+    });
+    return;
+  }
+
+  const { id } = parsed.data;
 
   try {
     const debt = await prisma.debt.findUnique({
@@ -135,7 +146,6 @@ export const deleteDebt = async (req: Request, res: Response) => {
       return;
     }
 
-    // Hitung sisa dari debt ini
     const totalPayment = debt.payments.reduce(
       (sum, p) => sum + Number(p.amount),
       0
@@ -143,11 +153,10 @@ export const deleteDebt = async (req: Request, res: Response) => {
 
     const isCurrentDebtLunas = totalPayment >= Number(debt.amount);
 
-    // Cek semua utang lain user ini
     const otherDebts = await prisma.debt.findMany({
       where: {
         userId: debt.userId,
-        id: { not: id }, // selain debt ini
+        id: { not: id },
       },
       include: { payments: true },
     });
@@ -157,7 +166,7 @@ export const deleteDebt = async (req: Request, res: Response) => {
         (sum, p) => sum + Number(p.amount),
         0
       );
-      return totalPaid < Number(d.amount); // masih punya yang belum lunas
+      return totalPaid < Number(d.amount);
     });
 
     if (!isCurrentDebtLunas || hasUnpaidOtherDebt) {
@@ -168,7 +177,6 @@ export const deleteDebt = async (req: Request, res: Response) => {
       });
     }
 
-    // Jika semua lunas
     await prisma.debt.delete({ where: { id } });
 
     res.json({

@@ -1,12 +1,15 @@
 // controllers/user.controller.ts
-import { Request, Response } from "express";
+import { Response } from "express";
 import prisma from "../prisma/client";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";
+import {
+  createUserSchema,
+  deleteUserParamSchema,
+  updateUserSchema,
+  userIdParamSchema,
+} from "../validations/user.schema";
 
-export const getAllUsers = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+export const getAllUsers = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const users = await prisma.user.findMany({
       orderBy: { createdAt: "desc" },
@@ -34,19 +37,19 @@ export const getAllUsers = async (
   }
 };
 
-export const createUser = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  const { name, phone, address } = req.body;
+export const createUser = async (req: AuthenticatedRequest, res: Response) => {
+  const parsed = createUserSchema.safeParse(req.body);
 
-  if (!name || !phone || !address) {
+  if (!parsed.success) {
+    const errorMessage = parsed.error.errors[0];
     res.status(400).json({
       success: false,
-      message: "Semua field (name, phone, address) wajib diisi",
+      message: errorMessage.message,
     });
     return;
   }
+
+  const { name, phone, address } = parsed.data;
 
   try {
     const newUser = await prisma.user.create({
@@ -72,12 +75,35 @@ export const createUser = async (
   }
 };
 
-export const updateUser = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  const { id } = req.params;
-  const { name, phone, address } = req.body;
+export const updateUser = async (req: AuthenticatedRequest, res: Response) => {
+  const parsedId = userIdParamSchema.safeParse(req.params);
+  if (!parsedId.success) {
+    res.status(400).json({
+      success: false,
+      message: parsedId.error.errors[0].message,
+    });
+    return;
+  }
+  const { id } = parsedId.data;
+
+  const parsedBody = updateUserSchema.safeParse(req.body);
+  if (!parsedBody.success) {
+    res.status(400).json({
+      success: false,
+      message: parsedBody.error.errors[0].message,
+    });
+    return;
+  }
+
+  const { data: updateData } = parsedBody;
+
+  if (Object.keys(updateData).length === 0) {
+    res.status(400).json({
+      success: false,
+      message: "Minimal satu field harus diisi.",
+    });
+    return;
+  }
 
   try {
     const existingUser = await prisma.user.findUnique({ where: { id } });
@@ -92,7 +118,7 @@ export const updateUser = async (
 
     const updated = await prisma.user.update({
       where: { id },
-      data: { name, phone, address },
+      data: updateData,
       select: {
         id: true,
         name: true,
@@ -116,27 +142,31 @@ export const updateUser = async (
   }
 };
 
-export const deleteUser = async (req: Request, res: Response) => {
-  const { id } = req.params;
+export const deleteUser = async (req: AuthenticatedRequest, res: Response) => {
+  const parsed = deleteUserParamSchema.safeParse(req.params);
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: parsed.error.errors[0].message,
+    });
+  }
+
+  const { id } = parsed.data;
 
   try {
-    // Cek apakah user ada
     const existingUser = await prisma.user.findUnique({ where: { id } });
-
     if (!existingUser) {
-      res.status(404).json({
+      return res.status(404).json({
         success: false,
         message: "User tidak ditemukan.",
       });
     }
 
-    // Ambil semua utang user
     const debts = await prisma.debt.findMany({
       where: { userId: id },
       include: { payments: true },
     });
 
-    // Cek apakah semua utang sudah lunas
     const hasUnpaidDebt = debts.some((debt) => {
       const totalPaid = debt.payments.reduce(
         (sum, p) => sum + Number(p.amount),
@@ -146,14 +176,13 @@ export const deleteUser = async (req: Request, res: Response) => {
     });
 
     if (hasUnpaidDebt) {
-      res.status(400).json({
+      return res.status(400).json({
         success: false,
         message:
           "User masih memiliki utang yang belum lunas, tidak dapat dihapus.",
       });
     }
 
-    // Jika semua lunas, hapus user
     await prisma.user.delete({ where: { id } });
 
     res.json({

@@ -4,6 +4,10 @@ import { redis } from "../utils/redis";
 import prisma from "../prisma/client";
 import { Prisma } from "@prisma/client";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware"; // pastikan path sesuai
+import {
+  createAdminSchema,
+  updateAdminSchema,
+} from "../validations/admin.schema";
 
 export const getAllAdmins = async (
   req: AuthenticatedRequest,
@@ -21,7 +25,7 @@ export const getAllAdmins = async (
             {
               name: {
                 contains: search,
-                mode: "insensitive", 
+                mode: "insensitive",
               },
             },
             {
@@ -66,14 +70,19 @@ export const getAllAdmins = async (
 };
 
 export const createAdmin = async (req: AuthenticatedRequest, res: Response) => {
-  const { username, password, role, email, name } = req.body;
+  const result = createAdminSchema.safeParse(req.body);
 
-  if (!username || !password || !role || !email || !name) {
+  if (!result.success) {
     res.status(400).json({
-      message: "Username, password, role, email, dan name wajib diisi",
+      message: "Validasi gagal",
+      errors: result.error.flatten().fieldErrors,
     });
+    return;
   }
 
+  const { username, password, role, email, name } = result.data;
+
+  // Cek duplikasi username
   const existing = await prisma.admin.findUnique({ where: { username } });
   if (existing) {
     res.status(409).json({ message: `Username ${username} sudah digunakan` });
@@ -102,11 +111,23 @@ export const createAdmin = async (req: AuthenticatedRequest, res: Response) => {
       role: newAdmin.role,
     },
   });
+  return;
 };
 
 export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
-  const { name, email, username, role, password } = req.body;
+
+  // Validasi input
+  const result = updateAdminSchema.safeParse(req.body);
+  if (!result.success) {
+    res.status(400).json({
+      message: "Validasi gagal",
+      errors: result.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  const { name, email, username, role, password } = result.data;
 
   try {
     const existingAdmin = await prisma.admin.findUnique({ where: { id } });
@@ -119,7 +140,10 @@ export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
         AND: [
           { id: { not: id } },
           {
-            OR: [{ email: email || "" }, { username: username || "" }],
+            OR: [
+              { email: email || undefined },
+              { username: username || undefined },
+            ],
           },
         ],
       },
@@ -133,12 +157,11 @@ export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
 
     const updateData: any = { name, email, username, role };
 
-    // Jika password ingin diubah
     if (password) {
       const hashed = await bcrypt.hash(password, 10);
       updateData.password = hashed;
 
-      // ❌ Hapus token dari Redis (logout paksa)
+      // Logout paksa
       await redis.del(`token:${id}`);
     }
 
@@ -151,11 +174,11 @@ export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
       success: true,
       message: `${updated.name} berhasil diperbarui`,
       data: {
-        id: updateData.id,
-        name: updateData.name,
-        username: updateData.username,
-        email: updateData.email,
-        role: updateData.role,
+        id: updated.id,
+        name: updated.name,
+        username: updated.username,
+        email: updated.email,
+        role: updated.role,
       },
     });
   } catch (error) {
@@ -164,10 +187,7 @@ export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const deleteAdmin = async (
-  req: AuthenticatedRequest,
-  res: Response
-): Promise<void> => {
+export const deleteAdmin = async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
 
   try {

@@ -6,41 +6,40 @@ import { redis } from "../utils/redis";
 import { generateToken } from "../utils/jwt";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";
 import { removeToken } from "../utils/removeToken";
+import { loginSchema } from "../validations/auth.schema";
 
-export const login = async (req: Request, res: Response): Promise<void> => {
-  const { username, password } = req.body;
-
-  if (!username || !password) {
-    res.status(400).json({ message: "Username dan password wajib diisi." });
-    return;
+export const login = async (req: Request, res: Response) => {
+  const parsed = loginSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: parsed.error.errors[0].message,
+    });
   }
+
+  const { username, password } = parsed.data;
 
   try {
     const admin = await prisma.admin.findUnique({ where: { username } });
 
     if (!admin) {
-      res.status(401).json({ message: "Username atau password salah." });
-      return;
+      return res.status(401).json({ message: "Username atau password salah." });
     }
 
     const valid = await bcrypt.compare(password, admin.password);
     if (!valid) {
-      res.status(401).json({ message: "Username atau password salah." });
-      return;
+      return res.status(401).json({ message: "Username atau password salah." });
     }
 
-    // ✅ Buat token setelah validasi berhasil
     const token = generateToken({
       id: admin.id,
       role: admin.role,
       username: admin.username,
     });
 
-    // ✅ Hitung TTL dari token
     const jwtDecoded = jwt.decode(token) as { exp: number };
     const ttlInSeconds = jwtDecoded.exp - Math.floor(Date.now() / 1000);
 
-    // ✅ Simpan token ke Redis
     await redis.set(`token:${admin.id}`, token, { ex: ttlInSeconds });
 
     res.status(200).json({
@@ -56,7 +55,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       },
     });
   } catch (err) {
-    console.error(err);
+    console.error("Login error:", err);
     res.status(500).json({ message: "Terjadi kesalahan server." });
   }
 };
@@ -107,7 +106,7 @@ export const getProfile = async (
   }
 };
 
-export const logout = async (req: Request, res: Response): Promise<void> => {
+export const logout = async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
