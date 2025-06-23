@@ -7,6 +7,7 @@ import debtRoutes from "./routes/debt.routes";
 import paymentRoutes from "./routes/payment.routes";
 import "./cron/paymentCleaner";
 import pingRoutes from "./routes/ping.routes";
+import { errorHandler } from "./middlewares/errorHandler";
 
 dotenv.config();
 
@@ -20,10 +21,11 @@ app.use("/api/user", userRoutes);
 app.use("/api/debt", debtRoutes);
 app.use("/api/payment", paymentRoutes);
 
-
 app.use((req, res) => {
   res.status(404).json({ message: "Endpoint tidak ditemukan." });
 });
+
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

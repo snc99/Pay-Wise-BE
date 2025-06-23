@@ -1,5 +1,5 @@
 import bcrypt from "bcrypt";
-import { Response } from "express";
+import { NextFunction, Response } from "express";
 import { redis } from "../utils/redis";
 import prisma from "../prisma/client";
 import { Prisma } from "@prisma/client";
@@ -11,7 +11,8 @@ import {
 
 export const getAllAdmins = async (
   req: AuthenticatedRequest,
-  res: Response
+  res: Response,
+  next: NextFunction
 ) => {
   const page = parseInt(req.query.page as string) || 1;
   const search = (req.query.search as string) || "";
@@ -63,58 +64,89 @@ export const getAllAdmins = async (
         totalItems: totalAdmins,
       },
     });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Gagal mengambil data admin" });
+  } catch (err) {
+    next(err);
   }
 };
 
-export const createAdmin = async (req: AuthenticatedRequest, res: Response) => {
+export const createAdmin = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
   const result = createAdminSchema.safeParse(req.body);
 
   if (!result.success) {
-    res.status(400).json({
+    return res.status(400).json({
+      status: 400,
       message: "Validasi gagal",
       errors: result.error.flatten().fieldErrors,
     });
-    return;
   }
 
   const { username, password, role, email, name } = result.data;
 
-  // Cek duplikasi username
-  const existing = await prisma.admin.findUnique({ where: { username } });
-  if (existing) {
-    res.status(409).json({ message: `Username ${username} sudah digunakan` });
+  try {
+    // Cek duplikasi username
+    const existingUsername = await prisma.admin.findUnique({
+      where: { username },
+    });
+    if (existingUsername) {
+      return res.status(409).json({
+        success: false,
+        status: 409,
+        message: `Username ${username} sudah digunakan`,
+        field: "username",
+      });
+    }
+
+    // Cek duplikasi email
+    const existingEmail = await prisma.admin.findUnique({
+      where: { email },
+    });
+    if (existingEmail) {
+      return res.status(409).json({
+        success: false,
+        status: 409,
+        message: `Email ${email} sudah digunakan`,
+        field: "email",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newAdmin = await prisma.admin.create({
+      data: {
+        username,
+        password: hashedPassword,
+        email,
+        name,
+        role,
+      },
+    });
+
+    return res.status(201).json({
+      success: true,
+      status: 201,
+      message: `${newAdmin.name} berhasil ditambahkan`,
+      data: {
+        id: newAdmin.id,
+        name: newAdmin.name,
+        username: newAdmin.username,
+        email: newAdmin.email,
+        role: newAdmin.role,
+      },
+    });
+  } catch (err) {
+    next(err);
   }
-
-  const hashedPassword = await bcrypt.hash(password, 10);
-
-  const newAdmin = await prisma.admin.create({
-    data: {
-      username,
-      password: hashedPassword,
-      email,
-      name,
-      role,
-    },
-  });
-
-  res.status(201).json({
-    success: true,
-    message: `${newAdmin.name} berhasil ditambahkan`,
-    data: {
-      id: newAdmin.id,
-      name: newAdmin.name,
-      username: newAdmin.username,
-      email: newAdmin.email,
-      role: newAdmin.role,
-    },
-  });
-  return;
 };
 
-export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
+export const updateAdmin = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
   const { id } = req.params;
 
   // Validasi input
@@ -133,26 +165,43 @@ export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
     const existingAdmin = await prisma.admin.findUnique({ where: { id } });
     if (!existingAdmin) {
       res.status(404).json({ message: "Admin tidak ditemukan" });
+      return;
     }
 
-    const duplicate = await prisma.admin.findFirst({
+    // Cek duplikat username (kecuali milik dia sendiri)
+    const existingUsername = await prisma.admin.findFirst({
       where: {
-        AND: [
-          { id: { not: id } },
-          {
-            OR: [
-              { email: email || undefined },
-              { username: username || undefined },
-            ],
-          },
-        ],
+        username,
+        id: { not: id },
       },
     });
 
-    if (duplicate) {
+    if (existingUsername) {
       res.status(409).json({
-        message: `Username ${username} atau email ${email} sudah digunakan`,
+        success: false,
+        status: 409,
+        message: `Username ${username} sudah digunakan`,
+        field: "username",
       });
+      return;
+    }
+
+    // Cek duplikat email (kecuali milik dia sendiri)
+    const existingEmail = await prisma.admin.findFirst({
+      where: {
+        email,
+        id: { not: id },
+      },
+    });
+
+    if (existingEmail) {
+      res.status(409).json({
+        success: false,
+        status: 409,
+        message: `Email ${email} sudah digunakan`,
+        field: "email",
+      });
+      return;
     }
 
     const updateData: any = { name, email, username, role };
@@ -161,8 +210,7 @@ export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
       const hashed = await bcrypt.hash(password, 10);
       updateData.password = hashed;
 
-      // Logout paksa
-      await redis.del(`token:${id}`);
+      await redis.del(`token:${id}`); // force logout
     }
 
     const updated = await prisma.admin.update({
@@ -181,13 +229,16 @@ export const updateAdmin = async (req: AuthenticatedRequest, res: Response) => {
         role: updated.role,
       },
     });
-  } catch (error) {
-    console.error("Gagal update admin:", error);
-    res.status(500).json({ message: "Gagal memperbarui admin" });
+  } catch (err) {
+    next(err);
   }
 };
 
-export const deleteAdmin = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteAdmin = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
   const { id } = req.params;
 
   try {
@@ -220,11 +271,7 @@ export const deleteAdmin = async (req: AuthenticatedRequest, res: Response) => {
         email: admin.email,
       },
     });
-  } catch (error) {
-    console.error("Gagal menghapus admin:", error);
-    res.status(500).json({
-      success: false,
-      message: "Terjadi kesalahan saat menghapus admin",
-    });
+  } catch (err) {
+    next(err);
   }
 };
