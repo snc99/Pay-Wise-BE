@@ -22,7 +22,11 @@ export const authenticate = async (
   const token = authHeader && authHeader.split(" ")[1];
 
   if (!token) {
-    res.status(401).json({ message: "Token tidak ditemukan" });
+    res.status(401).json({
+      success: false,
+      status: 401,
+      message: "Token tidak ditemukan",
+    });
     return;
   }
 
@@ -30,7 +34,11 @@ export const authenticate = async (
     // 1. Cek blacklist
     const isBlacklisted = await redis.get(`blacklist:${token}`);
     if (isBlacklisted) {
-      res.status(401).json({ message: "Token sudah logout" });
+      res.status(401).json({
+        success: false,
+        status: 401,
+        message: "Token sudah logout",
+      });
       return;
     }
 
@@ -40,15 +48,21 @@ export const authenticate = async (
     // 3. Cek apakah token masih aktif (tersimpan di Redis)
     const activeToken = await redis.get(`token:${decoded.id}`);
     if (!activeToken || activeToken !== token) {
-      res
-        .status(401)
-        .json({ message: "Token tidak aktif lagi. Silakan login ulang." });
+      res.status(401).json({
+        success: false,
+        status: 401,
+        message: "Token tidak aktif lagi. Silakan login ulang.",
+      });
       return;
     }
 
     // 4. Cek role
     if (!Object.values(Role).includes(decoded.role)) {
-      res.status(403).json({ message: "Role tidak valid" });
+      res.status(403).json({
+        success: false,
+        status: 403,
+        message: "Role tidak valid",
+      });
       return;
     }
 
@@ -56,6 +70,10 @@ export const authenticate = async (
     req.user = decoded;
     next();
   } catch (err) {
-    res.status(403).json({ message: "Token tidak valid" });
+    res.status(403).json({
+      success: false,
+      status: 403,
+      message: "Token tidak valid",
+    });
   }
 };

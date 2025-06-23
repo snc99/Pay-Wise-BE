@@ -1,3 +1,4 @@
+import { NextFunction } from "express";
 // controllers/user.controller.ts
 import { Response } from "express";
 import prisma from "../prisma/client";
@@ -9,7 +10,11 @@ import {
   userIdParamSchema,
 } from "../validations/user.schema";
 
-export const getAllUsers = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllUsers = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const users = await prisma.user.findMany({
       orderBy: { createdAt: "desc" },
@@ -25,28 +30,44 @@ export const getAllUsers = async (req: AuthenticatedRequest, res: Response) => {
 
     res.status(200).json({
       success: true,
+      status: 200,
       message: "Daftar user berhasil diambil",
       data: users,
     });
-  } catch (error) {
-    console.error("Gagal mengambil daftar user:", error);
-    res.status(500).json({
-      success: false,
-      message: "Terjadi kesalahan saat mengambil user",
-    });
+  } catch (err) {
+    next(err);
   }
 };
 
-export const createUser = async (req: AuthenticatedRequest, res: Response) => {
+export const createUser = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  // Optional: Deteksi field tidak dikenal
+  const allowedFields = ["name", "phone", "address"];
+  const invalidFields = Object.keys(req.body).filter(
+    (key) => !allowedFields.includes(key)
+  );
+
+  if (invalidFields.length > 0) {
+    return res.status(400).json({
+      success: false,
+      status: 400,
+      message: `Field tidak dikenal: ${invalidFields.join(", ")}`,
+    });
+  }
+
+  // Validasi schema
   const parsed = createUserSchema.safeParse(req.body);
 
   if (!parsed.success) {
-    const errorMessage = parsed.error.errors[0];
-    res.status(400).json({
+    return res.status(400).json({
       success: false,
-      message: errorMessage.message,
+      status: 400,
+      message: "Validasi gagal",
+      errors: parsed.error.flatten().fieldErrors,
     });
-    return;
   }
 
   const { name, phone, address } = parsed.data;
@@ -56,8 +77,9 @@ export const createUser = async (req: AuthenticatedRequest, res: Response) => {
       data: { name, phone, address },
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
+      status: 201,
       message: `${newUser.name} berhasil ditambahkan`,
       data: {
         id: newUser.id,
@@ -66,56 +88,78 @@ export const createUser = async (req: AuthenticatedRequest, res: Response) => {
         address: newUser.address,
       },
     });
-  } catch (error) {
-    console.error("Gagal membuat user:", error);
-    res.status(500).json({
-      success: false,
-      message: "Terjadi kesalahan saat membuat user",
-    });
+  } catch (err) {
+    next(err); // Ditangani middleware errorHandler
   }
 };
 
-export const updateUser = async (req: AuthenticatedRequest, res: Response) => {
+export const updateUser = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  // ✅ Validasi parameter ID
   const parsedId = userIdParamSchema.safeParse(req.params);
   if (!parsedId.success) {
-    res.status(400).json({
+    return res.status(400).json({
       success: false,
-      message: parsedId.error.errors[0].message,
+      status: 400,
+      message: "Validasi parameter gagal",
+      errors: parsedId.error.flatten().fieldErrors,
     });
-    return;
   }
+
   const { id } = parsedId.data;
 
-  const parsedBody = updateUserSchema.safeParse(req.body);
-  if (!parsedBody.success) {
-    res.status(400).json({
+  // ✅ Deteksi field tidak dikenal
+  const allowedFields = ["name", "phone", "address"];
+  const invalidFields = Object.keys(req.body).filter(
+    (key) => !allowedFields.includes(key)
+  );
+
+  if (invalidFields.length > 0) {
+    return res.status(400).json({
       success: false,
-      message: parsedBody.error.errors[0].message,
+      status: 400,
+      message: `Field tidak dikenal: ${invalidFields.join(", ")}`,
     });
-    return;
   }
 
-  const { data: updateData } = parsedBody;
-
-  if (Object.keys(updateData).length === 0) {
-    res.status(400).json({
+  // ✅ Validasi body
+  const parsedBody = updateUserSchema.safeParse(req.body);
+  if (!parsedBody.success) {
+    return res.status(400).json({
       success: false,
+      status: 400,
+      message: "Validasi gagal",
+      errors: parsedBody.error.flatten().fieldErrors,
+    });
+  }
+
+  const updateData = parsedBody.data;
+
+  // ✅ Pastikan minimal satu field dikirim
+  if (Object.keys(updateData).length === 0) {
+    return res.status(400).json({
+      success: false,
+      status: 400,
       message: "Minimal satu field harus diisi.",
     });
-    return;
   }
 
   try {
+    // ✅ Pastikan user ada
     const existingUser = await prisma.user.findUnique({ where: { id } });
 
     if (!existingUser) {
-      res.status(404).json({
+      return res.status(404).json({
         success: false,
+        status: 404,
         message: "User tidak ditemukan",
       });
-      return;
     }
 
+    // ✅ Update user
     const updated = await prisma.user.update({
       where: { id },
       data: updateData,
@@ -128,27 +172,30 @@ export const updateUser = async (req: AuthenticatedRequest, res: Response) => {
       },
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
+      status: 200,
       message: `${updated.name} berhasil diperbarui`,
       data: updated,
     });
-  } catch (error) {
-    console.error("Gagal update user:", error);
-    res.status(500).json({
-      success: false,
-      message: "Terjadi kesalahan saat memperbarui user",
-    });
+  } catch (err) {
+    next(err); // akan ditangani middleware errorHandler
   }
 };
 
-export const deleteUser = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteUser = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
   const parsed = deleteUserParamSchema.safeParse(req.params);
   if (!parsed.success) {
-    return res.status(400).json({
+    res.status(400).json({
       success: false,
+      status: 400,
       message: parsed.error.errors[0].message,
     });
+    return;
   }
 
   const { id } = parsed.data;
@@ -156,8 +203,9 @@ export const deleteUser = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const existingUser = await prisma.user.findUnique({ where: { id } });
     if (!existingUser) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
+        status: 404,
         message: "User tidak ditemukan.",
       });
     }
@@ -176,8 +224,9 @@ export const deleteUser = async (req: AuthenticatedRequest, res: Response) => {
     });
 
     if (hasUnpaidDebt) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
+        status: 400,
         message:
           "User masih memiliki utang yang belum lunas, tidak dapat dihapus.",
       });
@@ -187,18 +236,19 @@ export const deleteUser = async (req: AuthenticatedRequest, res: Response) => {
 
     res.json({
       success: true,
+      status: 200,
       message: "User berhasil dihapus.",
     });
-  } catch (error) {
-    console.error("Gagal menghapus user:", error);
-    res.status(500).json({
-      success: false,
-      message: "Terjadi kesalahan saat menghapus user.",
-    });
+  } catch (err) {
+    next(err);
   }
 };
 
-export const searchUsers = async (req: AuthenticatedRequest, res: Response) => {
+export const searchUsers = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
   const query = (req.query.query as string) || "";
 
   try {
@@ -218,13 +268,11 @@ export const searchUsers = async (req: AuthenticatedRequest, res: Response) => {
 
     res.json({
       success: true,
+      status: 200,
+      message: "Daftar user berhasil diambil",
       data: users,
     });
-  } catch (error) {
-    console.error("Gagal mencari user:", error);
-    res.status(500).json({
-      success: false,
-      message: "Terjadi kesalahan saat mencari user",
-    });
+  } catch (err) {
+    next(err);
   }
 };

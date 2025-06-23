@@ -57,6 +57,8 @@ export const getAllAdmins = async (
 
     res.status(200).json({
       success: true,
+      status: 200,
+      message: "Data admin berhasil diambil",
       data: admins,
       pagination: {
         currentPage: page,
@@ -247,6 +249,7 @@ export const deleteAdmin = async (
     if (!admin) {
       res.status(404).json({
         success: false,
+        status: 404,
         message: "Admin tidak ditemukan",
       });
       return;
@@ -255,6 +258,7 @@ export const deleteAdmin = async (
     if (req.user?.id === id) {
       res.status(400).json({
         success: false,
+        status: 400,
         message: "Anda tidak dapat menghapus akun Anda sendiri",
       });
       return;
@@ -264,6 +268,7 @@ export const deleteAdmin = async (
 
     res.json({
       success: true,
+      status: 200,
       message: `${admin.name} berhasil dihapus`,
       data: {
         id: admin.id,

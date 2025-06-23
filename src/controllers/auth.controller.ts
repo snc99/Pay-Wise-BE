@@ -1,72 +1,62 @@
 import prisma from "../prisma/client";
 import jwt from "jsonwebtoken";
-import bcrypt from "bcryptjs";
-import { Request, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import { redis } from "../utils/redis";
 import { generateToken } from "../utils/jwt";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";
 import { removeToken } from "../utils/removeToken";
 import { loginSchema } from "../validations/auth.schema";
+import { loginService } from "../services/auth.service";
 
-export const login = async (req: Request, res: Response) => {
+export const login = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({
       success: false,
-      message: parsed.error.errors[0].message,
+      status: 400,
+      message: "Validasi gagal",
+      errors: parsed.error.flatten().fieldErrors,
     });
   }
 
   const { username, password } = parsed.data;
 
   try {
-    const admin = await prisma.admin.findUnique({ where: { username } });
+    const result = await loginService(username, password);
 
-    if (!admin) {
-      return res.status(401).json({ message: "Username atau password salah." });
+    if (!result) {
+      return res.status(401).json({
+        success: false,
+        status: 401,
+        message: "Username atau password salah.",
+      });
     }
-
-    const valid = await bcrypt.compare(password, admin.password);
-    if (!valid) {
-      return res.status(401).json({ message: "Username atau password salah." });
-    }
-
-    const token = generateToken({
-      id: admin.id,
-      role: admin.role,
-      username: admin.username,
-    });
-
-    const jwtDecoded = jwt.decode(token) as { exp: number };
-    const ttlInSeconds = jwtDecoded.exp - Math.floor(Date.now() / 1000);
-
-    await redis.set(`token:${admin.id}`, token, { ex: ttlInSeconds });
 
     res.status(200).json({
       success: true,
+      status: 200,
       message: "Login berhasil",
-      token,
-      user: {
-        id: admin.id,
-        username: admin.username,
-        name: admin.name,
-        email: admin.email,
-        role: admin.role,
-      },
+      token: result.token,
+      user: result.user,
     });
   } catch (err) {
-    console.error("Login error:", err);
-    res.status(500).json({ message: "Terjadi kesalahan server." });
+    next(err);
   }
 };
 
 export const getProfile = async (
   req: AuthenticatedRequest,
-  res: Response
+  res: Response,
+  next: NextFunction
 ): Promise<void> => {
   if (!req.user) {
     res.status(401).json({
       success: false,
+      status: 401,
       message: "Unauthorized",
     });
     return;
@@ -87,6 +77,7 @@ export const getProfile = async (
     if (!admin) {
       res.status(404).json({
         success: false,
+        status: 404,
         message: "User tidak ditemukan",
       });
       return;
@@ -94,24 +85,26 @@ export const getProfile = async (
 
     res.status(200).json({
       success: true,
+      status: 200,
       message: "Profil pengguna berhasil diambil",
       user: admin,
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({
-      success: false,
-      message: "Terjadi kesalahan server",
-    });
+    next(err);
   }
 };
 
-export const logout = async (req: Request, res: Response) => {
+export const logout = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     res.status(401).json({
       success: false,
+      status: 401,
       message: "Token tidak ditemukan",
     });
     return;
@@ -125,6 +118,7 @@ export const logout = async (req: Request, res: Response) => {
     if (!decoded?.exp) {
       res.status(400).json({
         success: false,
+        status: 400,
         message: "Token tidak valid",
       });
       return;
@@ -136,6 +130,7 @@ export const logout = async (req: Request, res: Response) => {
     if (ttlInSeconds <= 0) {
       res.status(400).json({
         success: false,
+        status: 400,
         message: "Token sudah kedaluwarsa",
       });
       return;
@@ -151,13 +146,10 @@ export const logout = async (req: Request, res: Response) => {
 
     res.status(200).json({
       success: true,
+      status: 200,
       message: "Logout berhasil",
     });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Logout gagal",
-    });
+  } catch (err) {
+    next(err);
   }
 };
