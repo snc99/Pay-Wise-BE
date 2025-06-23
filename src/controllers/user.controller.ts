@@ -9,30 +9,58 @@ import {
   updateUserSchema,
   userIdParamSchema,
 } from "../validations/user.schema";
+import { Prisma } from "@prisma/client";
 
 export const getAllUsers = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
+  const page = parseInt(req.query.page as string) || 1;
+  const search = (req.query.search as string) || "";
+  const limit = 7;
+  const skip = (page - 1) * limit;
+
   try {
-    const users = await prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        name: true,
-        phone: true,
-        address: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const where: Prisma.UserWhereInput = search
+      ? {
+          name: {
+            contains: search,
+            mode: "insensitive",
+          },
+        }
+      : {};
+
+    const [users, totalUsers] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          address: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.user.count({ where }),
+    ]);
 
     res.status(200).json({
       success: true,
       status: 200,
       message: "Daftar user berhasil diambil",
-      data: users,
+      data: {
+        items: users,
+      },
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalUsers / limit),
+        totalItems: totalUsers,
+      },
     });
   } catch (err) {
     next(err);
@@ -43,7 +71,7 @@ export const createUser = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   // Optional: Deteksi field tidak dikenal
   const allowedFields = ["name", "phone", "address"];
   const invalidFields = Object.keys(req.body).filter(
@@ -51,23 +79,25 @@ export const createUser = async (
   );
 
   if (invalidFields.length > 0) {
-    return res.status(400).json({
+    res.status(400).json({
       success: false,
       status: 400,
       message: `Field tidak dikenal: ${invalidFields.join(", ")}`,
     });
+    return;
   }
 
   // Validasi schema
   const parsed = createUserSchema.safeParse(req.body);
 
   if (!parsed.success) {
-    return res.status(400).json({
+    res.status(400).json({
       success: false,
       status: 400,
       message: "Validasi gagal",
       errors: parsed.error.flatten().fieldErrors,
     });
+    return;
   }
 
   const { name, phone, address } = parsed.data;
@@ -77,7 +107,7 @@ export const createUser = async (
       data: { name, phone, address },
     });
 
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
       status: 201,
       message: `${newUser.name} berhasil ditambahkan`,
@@ -88,6 +118,7 @@ export const createUser = async (
         address: newUser.address,
       },
     });
+    return;
   } catch (err) {
     next(err); // Ditangani middleware errorHandler
   }
@@ -97,16 +128,17 @@ export const updateUser = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   // ✅ Validasi parameter ID
   const parsedId = userIdParamSchema.safeParse(req.params);
   if (!parsedId.success) {
-    return res.status(400).json({
+    res.status(400).json({
       success: false,
       status: 400,
       message: "Validasi parameter gagal",
       errors: parsedId.error.flatten().fieldErrors,
     });
+    return;
   }
 
   const { id } = parsedId.data;
@@ -118,33 +150,36 @@ export const updateUser = async (
   );
 
   if (invalidFields.length > 0) {
-    return res.status(400).json({
+    res.status(400).json({
       success: false,
       status: 400,
       message: `Field tidak dikenal: ${invalidFields.join(", ")}`,
     });
+    return;
   }
 
   // ✅ Validasi body
   const parsedBody = updateUserSchema.safeParse(req.body);
   if (!parsedBody.success) {
-    return res.status(400).json({
+    res.status(400).json({
       success: false,
       status: 400,
       message: "Validasi gagal",
       errors: parsedBody.error.flatten().fieldErrors,
     });
+    return;
   }
 
   const updateData = parsedBody.data;
 
   // ✅ Pastikan minimal satu field dikirim
   if (Object.keys(updateData).length === 0) {
-    return res.status(400).json({
+    res.status(400).json({
       success: false,
       status: 400,
       message: "Minimal satu field harus diisi.",
     });
+    return;
   }
 
   try {
@@ -152,11 +187,12 @@ export const updateUser = async (
     const existingUser = await prisma.user.findUnique({ where: { id } });
 
     if (!existingUser) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         status: 404,
         message: "User tidak ditemukan",
       });
+      return;
     }
 
     // ✅ Update user
@@ -172,12 +208,13 @@ export const updateUser = async (
       },
     });
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       status: 200,
       message: `${updated.name} berhasil diperbarui`,
       data: updated,
     });
+    return;
   } catch (err) {
     next(err); // akan ditangani middleware errorHandler
   }
@@ -187,7 +224,7 @@ export const deleteUser = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   const parsed = deleteUserParamSchema.safeParse(req.params);
   if (!parsed.success) {
     res.status(400).json({
@@ -248,7 +285,7 @@ export const searchUsers = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   const query = (req.query.query as string) || "";
 
   try {
@@ -273,6 +310,74 @@ export const searchUsers = async (
       data: users,
     });
   } catch (err) {
+    next(err);
+  }
+};
+
+export const getUsersWithRemainingDebt = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const search = (req.query.search as string)?.toLowerCase() || "";
+  const limit = parseInt(req.query.limit as string) || 10;
+
+  try {
+    const debts = await prisma.debt.findMany({
+      include: {
+        user: true,
+        payments: true,
+      },
+    });
+
+    const userMap = new Map<
+      string,
+      { userName: string; totalRemaining: number }
+    >();
+
+    for (const debt of debts) {
+      const totalPaid = debt.payments.reduce(
+        (sum, p) => sum + Number(p.amount),
+        0
+      );
+      const remaining = Number(debt.amount) - totalPaid;
+
+      if (remaining > 0) {
+        const userId = debt.user.id;
+        const userName = debt.user.name;
+
+        if (
+          !search || // semua kalau search kosong
+          userName.toLowerCase().includes(search)
+        ) {
+          const existing = userMap.get(userId);
+          if (existing) {
+            existing.totalRemaining += remaining;
+          } else {
+            userMap.set(userId, {
+              userName,
+              totalRemaining: remaining,
+            });
+          }
+        }
+      }
+    }
+
+    const result = Array.from(userMap.entries())
+      .map(([userId, data]) => ({
+        userId,
+        ...data,
+      }))
+      .slice(0, limit); // batasi jumlah hasil
+
+    res.status(200).json({
+      success: true,
+      status: 200,
+      message: "Data user dengan sisa utang berhasil diambil",
+      data: result,
+    });
+  } catch (err) {
+    console.error("GET /payment/user-select error:", err);
     next(err);
   }
 };

@@ -13,7 +13,7 @@ export const getAllAdmins = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   const page = parseInt(req.query.page as string) || 1;
   const search = (req.query.search as string) || "";
   const limit = 7;
@@ -59,7 +59,9 @@ export const getAllAdmins = async (
       success: true,
       status: 200,
       message: "Data admin berhasil diambil",
-      data: admins,
+      data: {
+        items: admins,
+      },
       pagination: {
         currentPage: page,
         totalPages: Math.ceil(totalAdmins / limit),
@@ -75,15 +77,16 @@ export const createAdmin = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   const result = createAdminSchema.safeParse(req.body);
 
   if (!result.success) {
-    return res.status(400).json({
+    res.status(400).json({
       status: 400,
       message: "Validasi gagal",
       errors: result.error.flatten().fieldErrors,
     });
+    return;
   }
 
   const { username, password, role, email, name } = result.data;
@@ -94,12 +97,13 @@ export const createAdmin = async (
       where: { username },
     });
     if (existingUsername) {
-      return res.status(409).json({
+      res.status(409).json({
         success: false,
         status: 409,
         message: `Username ${username} sudah digunakan`,
         field: "username",
       });
+      return;
     }
 
     // Cek duplikasi email
@@ -107,12 +111,13 @@ export const createAdmin = async (
       where: { email },
     });
     if (existingEmail) {
-      return res.status(409).json({
+      res.status(409).json({
         success: false,
         status: 409,
         message: `Email ${email} sudah digunakan`,
         field: "email",
       });
+      return;
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -127,7 +132,7 @@ export const createAdmin = async (
       },
     });
 
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
       status: 201,
       message: `${newAdmin.name} berhasil ditambahkan`,
@@ -139,6 +144,7 @@ export const createAdmin = async (
         role: newAdmin.role,
       },
     });
+    return;
   } catch (err) {
     next(err);
   }
@@ -148,7 +154,7 @@ export const updateAdmin = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   const { id } = req.params;
 
   // Validasi input
@@ -240,7 +246,7 @@ export const deleteAdmin = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   const { id } = req.params;
 
   try {

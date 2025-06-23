@@ -1,10 +1,14 @@
-import { Request, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import prisma from "../prisma/client";
 import { Prisma } from "@prisma/client";
 import { debtSchema, deleteDebtParamsSchema } from "../validations/debt.schema";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";
 
-export const getAllDebts = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllDebts = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
   const page = parseInt(req.query.page as string) || 1;
   const search = (req.query.search as string) || "";
   const limit = 7;
@@ -41,29 +45,50 @@ export const getAllDebts = async (req: AuthenticatedRequest, res: Response) => {
 
     res.status(200).json({
       success: true,
+      status: 200,
       message: "Daftar debt berhasil diambil",
-      data: debts,
+      data: {
+        items: debts,
+      },
       pagination: {
         currentPage: page,
         totalPages: Math.ceil(totalDebts / limit),
         totalItems: totalDebts,
       },
     });
-  } catch (error) {
-    console.error("GET /api/debt error:", error);
-    res.status(500).json({ message: "Gagal mengambil data utang." });
+  } catch (err) {
+    next(err);
   }
 };
 
-export const createDebt = async (req: AuthenticatedRequest, res: Response) => {
+export const createDebt = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   try {
+    // Cek field typo (misalnya amout vs amount)
+    const allowedFields = ["userId", "amount", "date"];
+    const unknownFields = Object.keys(req.body).filter(
+      (key) => !allowedFields.includes(key)
+    );
+    if (unknownFields.length > 0) {
+      res.status(400).json({
+        success: false,
+        status: 400,
+        message: `Field tidak dikenali: ${unknownFields.join(", ")}`,
+      });
+      return;
+    }
+
     const parsed = debtSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors[0];
       res.status(400).json({
         success: false,
-        message: errorMessage.message,
+        status: 400,
+        message: "Validasi gagal",
+        errors: parsed.error.flatten().fieldErrors,
       });
       return;
     }
@@ -85,7 +110,8 @@ export const createDebt = async (req: AuthenticatedRequest, res: Response) => {
 
     res.status(201).json({
       success: true,
-      message: `${newDebt.user.name} berhasil menambahkan utang`,
+      status: 201,
+      message: `${newDebt.user.name} berhasil menambahkan utang.`,
       data: {
         userId: newDebt.userId,
         amount: newDebt.amount,
@@ -95,33 +121,37 @@ export const createDebt = async (req: AuthenticatedRequest, res: Response) => {
         },
       },
     });
-  } catch (error) {
-    console.error("POST /debt error:", error);
+    return;
+  } catch (err) {
+    console.error("POST /debt error:", err);
 
     if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2003"
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2003"
     ) {
       res.status(400).json({
         success: false,
-        message: `"User yang dipilih tidak ditemukan."`,
+        status: 400,
+        message: "User yang dipilih tidak ditemukan.",
       });
       return;
     }
 
-    res.status(500).json({
-      success: false,
-      message: "Terjadi kesalahan saat menambahkan utang.",
-    });
+    next(err);
   }
 };
 
-export const deleteDebt = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteDebt = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   const parsed = deleteDebtParamsSchema.safeParse(req.params);
 
   if (!parsed.success) {
     res.status(400).json({
       success: false,
+      status: 400,
       message: parsed.error.errors[0].message,
     });
     return;
@@ -141,18 +171,20 @@ export const deleteDebt = async (req: AuthenticatedRequest, res: Response) => {
     if (!debt) {
       res.status(404).json({
         success: false,
-        message: "Data utang tidak ditemukan",
+        status: 404,
+        message: "Data utang tidak ditemukan.",
       });
       return;
     }
 
+    // Cek utang ini sudah lunas
     const totalPayment = debt.payments.reduce(
       (sum, p) => sum + Number(p.amount),
       0
     );
-
     const isCurrentDebtLunas = totalPayment >= Number(debt.amount);
 
+    // Cek apakah user punya utang lain yang belum lunas
     const otherDebts = await prisma.debt.findMany({
       where: {
         userId: debt.userId,
@@ -172,22 +204,23 @@ export const deleteDebt = async (req: AuthenticatedRequest, res: Response) => {
     if (!isCurrentDebtLunas || hasUnpaidOtherDebt) {
       res.status(400).json({
         success: false,
+        status: 400,
         message:
-          "Tidak bisa menghapus utang karena masih ada utang yang belum lunas",
+          "Tidak bisa menghapus utang karena masih ada utang yang belum lunas.",
       });
+      return;
     }
 
+    // Hapus utang
     await prisma.debt.delete({ where: { id } });
 
-    res.json({
+    res.status(200).json({
       success: true,
-      message: `${debt.user.name} berhasil menghapus data utang.`,
+      status: 200,
+      message: `Berhasil menghapus data utang ${debt.user.name}.`,
     });
-  } catch (error) {
-    console.error("Gagal menghapus utang:", error);
-    res.status(500).json({
-      success: false,
-      message: "Terjadi kesalahan saat menghapus utang.",
-    });
+    return;
+  } catch (err) {
+    next(err);
   }
 };

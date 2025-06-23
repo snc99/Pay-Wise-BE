@@ -3,6 +3,7 @@ import {
   createUser,
   deleteUser,
   getAllUsers,
+  getUsersWithRemainingDebt,
   searchUsers,
   updateUser,
 } from "../controllers/user.controller";
@@ -16,6 +17,6 @@ router.post("/", authenticate, createUser);
 router.put("/:id", authenticate, updateUser);
 router.delete("/:id", authenticate, deleteUser);
 router.get("/search", authenticate, searchUsers);
-
+router.get("/select-for-payment", authenticate, getUsersWithRemainingDebt);
 
 export default router;

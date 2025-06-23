@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import prisma from "../prisma/client";
 import {
@@ -8,7 +8,11 @@ import {
 import { r } from "@upstash/redis/zmscore-DzNHSWxc";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";
 
-export const getPayments = async (req: AuthenticatedRequest, res: Response) => {
+export const getPayments = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   const page = parseInt(req.query.page as string) || 1;
   const search = (req.query.search as string) || "";
   const limit = 7;
@@ -16,7 +20,7 @@ export const getPayments = async (req: AuthenticatedRequest, res: Response) => {
 
   try {
     const where: Prisma.PaymentWhereInput = {
-      deletedAt: null, // hanya payment yang belum dihapus
+      deletedAt: null,
       ...(search
         ? {
             debt: {
@@ -50,7 +54,7 @@ export const getPayments = async (req: AuthenticatedRequest, res: Response) => {
       },
     });
 
-    // Group by debtId
+    // Grouping by debt
     const groupedByDebt = new Map<
       string,
       { amount: number; items: typeof allPayments }
@@ -67,11 +71,10 @@ export const getPayments = async (req: AuthenticatedRequest, res: Response) => {
       groupedByDebt.get(key)!.items.push(p);
     }
 
-    // Calculate remainingCalculated per payment
+    // Calculate remainingCalculated
     const result: any[] = [];
     for (const [, group] of groupedByDebt.entries()) {
       let remaining = group.amount;
-
       for (const p of group.items) {
         remaining -= Number(p.amount);
         result.push({
@@ -102,7 +105,7 @@ export const getPayments = async (req: AuthenticatedRequest, res: Response) => {
       userRemainingMap.set(userId, prev + remaining);
     }
 
-    // Gabungkan dengan totalRemaining per user
+    // Enrich hasil akhir
     const enrichedResult = result.map((item) => ({
       ...item,
       totalRemaining: userRemainingMap.get(item.debt.user.id) || 0,
@@ -114,42 +117,77 @@ export const getPayments = async (req: AuthenticatedRequest, res: Response) => {
       )
       .slice(skip, skip + limit);
 
+    // ✅ Clean final data
+    const cleanedResult = paginated.map((item) => ({
+      id: item.id,
+      amount: item.amount,
+      paidAt: item.paidAt,
+      userName: item.debt.user.name,
+      remainingCalculated: item.remainingCalculated,
+      totalRemaining: item.totalRemaining,
+    }));
+
     res.status(200).json({
       success: true,
-      data: paginated,
+      status: 200,
+      message: "Data pembayaran berhasil diambil",
+      data: cleanedResult,
       pagination: {
         currentPage: page,
         totalPages: Math.ceil(enrichedResult.length / limit),
         totalItems: enrichedResult.length,
       },
     });
-  } catch (error) {
-    console.error("GET /payment error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Gagal mengambil data pembayaran.",
-    });
+  } catch (err) {
+    next(err);
   }
 };
 
 export const createPayment = async (
   req: AuthenticatedRequest,
-  res: Response
-) => {
-  try {
-    const parsed = paymentSchema.safeParse(req.body);
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const parsed = paymentSchema.safeParse(req.body);
 
-    if (!parsed.success) {
-      const errorMessage = parsed.error.errors[0];
+  if (!parsed.success) {
+    const unknownField = parsed.error.issues.find(
+      (issue) => issue.code === "unrecognized_keys"
+    );
+
+    if (unknownField) {
       res.status(400).json({
         success: false,
-        message: errorMessage.message,
+        status: 400,
+        message: `Field tidak dikenal: ${unknownField.keys.join(", ")}`,
       });
       return;
     }
 
+    res.status(400).json({
+      success: false,
+      status: 400,
+      message: "Validasi gagal",
+      errors: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  const { userId, amount, paidAt } = parsed.data;
+  let remainingAmount = new Prisma.Decimal(amount);
+
+  try {
     const { userId, amount, paidAt } = parsed.data;
-    let remainingAmount = new Prisma.Decimal(amount);
+
+    const userExists = await prisma.user.findUnique({ where: { id: userId } });
+    if (!userExists) {
+      res.status(404).json({
+        success: false,
+        status: 404,
+        message: "User yang dipilih tidak ditemukan.",
+      });
+      return;
+    }
 
     const debts = await prisma.debt.findMany({
       where: { userId },
@@ -168,8 +206,10 @@ export const createPayment = async (
     if (unpaidDebts.length === 0) {
       res.status(400).json({
         success: false,
+        status: 400,
         message: "User tidak memiliki utang yang belum lunas.",
       });
+      return;
     }
 
     const paymentsToCreate = [];
@@ -202,8 +242,10 @@ export const createPayment = async (
     if (remainingAmount.gt(0)) {
       res.status(400).json({
         success: false,
+        status: 400,
         message: "Nominal pembayaran melebihi total sisa utang user.",
       });
+      return;
     }
 
     const createdPayments = await prisma.$transaction(
@@ -212,26 +254,28 @@ export const createPayment = async (
 
     res.status(201).json({
       success: true,
+      status: 201,
       message: "Pembayaran berhasil dicatat",
       data: createdPayments,
     });
-  } catch (error) {
-    console.error("POST /payment error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Terjadi kesalahan saat mencatat pembayaran.",
-    });
+    return;
+  } catch (err) {
+    console.error("POST /payment error:", err);
+    return next(err);
   }
 };
 
 export const deletePayment = async (
   req: AuthenticatedRequest,
-  res: Response
-) => {
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   const parsed = deletePaymentParamsSchema.safeParse(req.params);
+
   if (!parsed.success) {
     res.status(400).json({
       success: false,
+      status: 400,
       message: parsed.error.errors[0].message,
     });
     return;
@@ -245,7 +289,12 @@ export const deletePayment = async (
       include: {
         debt: {
           include: {
-            payments: true,
+            payments: {
+              where: {
+                deletedAt: null, // Hanya payment aktif
+              },
+            },
+            user: true,
           },
         },
       },
@@ -254,23 +303,26 @@ export const deletePayment = async (
     if (!payment) {
       res.status(404).json({
         success: false,
-        message: "Payment tidak ditemukan.",
+        status: 404,
+        message: "Pembayaran tidak ditemukan.",
       });
       return;
     }
 
-    const totalPaid = payment.debt.payments
-      .filter((p) => !p.deletedAt)
-      .reduce((sum, p) => sum + Number(p.amount), 0);
-
+    const totalPaid = payment.debt.payments.reduce(
+      (sum, p) => sum + Number(p.amount),
+      0
+    );
     const debtAmount = Number(payment.debt.amount);
-    const remaining = debtAmount - totalPaid;
+    const isDebtFullyPaid = totalPaid >= debtAmount;
 
-    if (remaining !== 0) {
+    if (!isDebtFullyPaid) {
       res.status(400).json({
         success: false,
-        message: "Payment tidak bisa dihapus karena utang belum lunas.",
+        status: 400,
+        message: "Pembayaran tidak bisa dihapus karena utang belum lunas.",
       });
+      return;
     }
 
     await prisma.payment.update({
@@ -282,14 +334,11 @@ export const deletePayment = async (
 
     res.status(200).json({
       success: true,
-      message: "Payment berhasil dihapus",
+      status: 200,
+      message: `Pembayaran berhasil dihapus untuk user ${payment.debt.user.name}.`,
     });
-  } catch (error) {
-    console.error("DELETE /payment/:id error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Terjadi kesalahan saat menghapus payment.",
-    });
+  } catch (err) {
+    next(err);
   }
 };
 

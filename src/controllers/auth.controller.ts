@@ -12,15 +12,16 @@ export const login = async (
   req: Request,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
+    res.status(400).json({
       success: false,
       status: 400,
       message: "Validasi gagal",
       errors: parsed.error.flatten().fieldErrors,
     });
+    return;
   }
 
   const { username, password } = parsed.data;
@@ -29,11 +30,12 @@ export const login = async (
     const result = await loginService(username, password);
 
     if (!result) {
-      return res.status(401).json({
+      res.status(401).json({
         success: false,
         status: 401,
         message: "Username atau password salah.",
       });
+      return;
     }
 
     res.status(200).json({
@@ -43,6 +45,7 @@ export const login = async (
       token: result.token,
       user: result.user,
     });
+    return;
   } catch (err) {
     next(err);
   }
@@ -98,7 +101,7 @@ export const logout = async (
   req: Request,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
