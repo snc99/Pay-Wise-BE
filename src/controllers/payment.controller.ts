@@ -189,6 +189,8 @@ export const createPayment = async (
       return;
     }
 
+    const userName = userExists.name;
+
     const debts = await prisma.debt.findMany({
       where: { userId },
       include: { payments: true },
@@ -255,7 +257,7 @@ export const createPayment = async (
     res.status(201).json({
       success: true,
       status: 201,
-      message: "Pembayaran berhasil dicatat",
+      message: `Pembayaran ${userName} berhasil dicatat.`,
       data: createdPayments,
     });
     return;
