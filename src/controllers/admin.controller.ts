@@ -8,6 +8,7 @@ import {
   createAdminSchema,
   updateAdminSchema,
 } from "../validations/admin.schema";
+import { formatZodError } from "../utils/zodErrorFormatter";
 
 export const getAllAdmins = async (
   req: AuthenticatedRequest,
@@ -81,10 +82,12 @@ export const createAdmin = async (
   const result = createAdminSchema.safeParse(req.body);
 
   if (!result.success) {
+    const formattedErrors = formatZodError(result.error);
+
     res.status(400).json({
       status: 400,
       message: "Validasi gagal",
-      errors: result.error.flatten().fieldErrors,
+      errors: formattedErrors,
     });
     return;
   }
@@ -92,30 +95,26 @@ export const createAdmin = async (
   const { username, password, role, email, name } = result.data;
 
   try {
-    // Cek duplikasi username
-    const existingUsername = await prisma.admin.findUnique({
-      where: { username },
-    });
+    const existingUsername = await prisma.admin.findUnique({ where: { username } });
     if (existingUsername) {
       res.status(409).json({
-        success: false,
         status: 409,
-        message: `Username ${username} sudah digunakan`,
-        field: "username",
+        message: "Validasi gagal",
+        errors: {
+          username: [`Username ${username} sudah digunakan`],
+        },
       });
       return;
     }
 
-    // Cek duplikasi email
-    const existingEmail = await prisma.admin.findUnique({
-      where: { email },
-    });
+    const existingEmail = await prisma.admin.findUnique({ where: { email } });
     if (existingEmail) {
       res.status(409).json({
-        success: false,
         status: 409,
-        message: `Email ${email} sudah digunakan`,
-        field: "email",
+        message: "Validasi gagal",
+        errors: {
+          email: [`Email ${email} sudah digunakan`],
+        },
       });
       return;
     }
@@ -144,7 +143,6 @@ export const createAdmin = async (
         role: newAdmin.role,
       },
     });
-    return;
   } catch (err) {
     next(err);
   }

@@ -8,6 +8,14 @@ const optionalTrimmedString = (field: string, min = 3) =>
     .superRefine((val, ctx) => {
       if (val === undefined) return;
 
+      if (val === "") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${field} tidak boleh kosong.`,
+        });
+        return;
+      }
+
       const trimmed = val.trim();
 
       if (!trimmed) {
@@ -37,6 +45,14 @@ const requiredTrimmedString = (field: string, min = 3) =>
       invalid_type_error: `${field} harus berupa string.`,
     })
     .superRefine((val, ctx) => {
+      if (val === "") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${field} wajib diisi.`,
+        });
+        return;
+      }
+
       const trimmed = val.trim();
 
       if (!trimmed) {
@@ -71,6 +87,15 @@ export const createUserSchema = z.object({
     })
     .superRefine((val, ctx) => {
       const trimmed = val.trim();
+
+      // ❗ Tangani string kosong terlebih dahulu
+      if (!trimmed) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Nomor telepon wajib diisi.",
+        });
+        return;
+      }
 
       if (!/^\d+$/.test(trimmed)) {
         ctx.addIssue({
@@ -112,6 +137,14 @@ export const updateUserSchema = z.object({
     .optional()
     .superRefine((val, ctx) => {
       if (val === undefined) return;
+
+      if (val === "") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Nomor telepon tidak boleh kosong.",
+        });
+        return;
+      }
 
       const trimmed = val.trim();
 
