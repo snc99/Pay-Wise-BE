@@ -3,6 +3,7 @@ import prisma from "../prisma/client";
 import { Prisma } from "@prisma/client";
 import { debtSchema, deleteDebtParamsSchema } from "../validations/debt.schema";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";
+import { formatZodError } from "../utils/zodErrorFormatter";
 
 export const getAllDebts = async (
   req: AuthenticatedRequest,
@@ -67,20 +68,6 @@ export const createDebt = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    // Cek field typo (misalnya amout vs amount)
-    const allowedFields = ["userId", "amount", "date"];
-    const unknownFields = Object.keys(req.body).filter(
-      (key) => !allowedFields.includes(key)
-    );
-    if (unknownFields.length > 0) {
-      res.status(400).json({
-        success: false,
-        status: 400,
-        message: `Field tidak dikenali: ${unknownFields.join(", ")}`,
-      });
-      return;
-    }
-
     const parsed = debtSchema.safeParse(req.body);
 
     if (!parsed.success) {
@@ -88,7 +75,7 @@ export const createDebt = async (
         success: false,
         status: 400,
         message: "Validasi gagal",
-        errors: parsed.error.flatten().fieldErrors,
+        errors: formatZodError(parsed.error),
       });
       return;
     }
