@@ -131,7 +131,9 @@ export const getPayments = async (
       success: true,
       status: 200,
       message: "Data pembayaran berhasil diambil",
-      data: cleanedResult,
+      data: {
+        items: cleanedResult,
+      },
       pagination: {
         currentPage: page,
         totalPages: Math.ceil(enrichedResult.length / limit),
@@ -209,7 +211,7 @@ export const createPayment = async (
       res.status(400).json({
         success: false,
         status: 400,
-        message: "User tidak memiliki utang yang belum lunas.",
+        message: "User yang dipilih tidak memiliki pencatatan.",
       });
       return;
     }
@@ -362,11 +364,9 @@ export const getDeletedPayments = async (
       include: {
         debt: {
           select: {
-            id: true,
             amount: true,
             user: {
               select: {
-                id: true,
                 name: true,
               },
             },
@@ -375,9 +375,23 @@ export const getDeletedPayments = async (
       },
     });
 
+    // 🎯 Clean & format response
+    const cleaned = deletedPayments.map((item) => ({
+      id: item.id,
+      amount: item.amount,
+      remaining: item.remaining,
+      paidAt: item.paidAt,
+      userName: item.debt.user.name,
+      totalDebt: item.debt.amount,
+    }));
+
     res.status(200).json({
       success: true,
-      data: deletedPayments,
+      status: 200,
+      message: "Data histori pembayaran berhasil diambil.",
+      data: {
+        items: cleaned,
+      },
     });
   } catch (error) {
     console.error("GET /payment/history error:", error);

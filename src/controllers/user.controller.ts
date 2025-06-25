@@ -298,7 +298,9 @@ export const searchUsers = async (
       success: true,
       status: 200,
       message: "Daftar user berhasil diambil",
-      data: options,
+      data: {
+        items: options,
+      },
     });
   } catch (err) {
     next(err);
@@ -369,8 +371,9 @@ export const getUsersWithRemainingDebt = async (
       success: true,
       status: 200,
       message: "Data user dengan sisa utang berhasil diambil",
-      totalUsers: result.length,
-      data: result,
+      data: {
+        items: result,
+      },
     });
   } catch (err) {
     console.error("GET /users/with-debt error:", err);

@@ -1,35 +1,70 @@
 import { z } from "zod";
 
-export const paymentSchema = z
-  .object({
-    userId: z
-      .string({
-        required_error: "User wajib dipilih.",
-        invalid_type_error: "User tidak valid.",
-      })
-      .min(1, "User wajib dipilih."),
-    amount: z
-      .string({
-        required_error: "Nominal pembayaran wajib diisi.",
-        invalid_type_error: "Nominal pembayaran harus berupa string.",
-      })
-      .min(1, { message: "Nominal pembayaran tidak boleh kosong." })
-      .refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
-        message: "Nominal pembayaran harus berupa angka positif.",
-      }),
-    paidAt: z
-      .string({
-        required_error: "Tanggal pembayaran wajib diisi.",
-        invalid_type_error: "Tanggal pembayaran harus berupa string.",
-      })
-      .refine((val) => !isNaN(Date.parse(val)), {
-        message: "Tanggal pembayaran tidak valid.",
-      })
-      .refine((val) => new Date(val) <= new Date(), {
-        message: "Tanggal pembayaran tidak boleh di masa depan.",
-      }),
+const amountSchema = z.any().superRefine((val, ctx) => {
+  const raw = typeof val === "string" ? val.trim() : String(val);
+
+  // 1. Cek kosong
+  if (!raw) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Nominal tidak boleh kosong.",
+    });
+    return;
+  }
+
+  // 2. Cek angka valid
+  if (isNaN(Number(raw))) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Nominal harus berupa angka.",
+    });
+    return;
+  }
+
+  // 3. Cek positif
+  if (Number(raw) <= 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Nominal harus lebih dari 0.",
+    });
+  }
+});
+
+const padAtSchema = z
+  .string({
+    required_error: "Tanggal wajib diisi.",
+    invalid_type_error: "Tanggal wajib berupa string.",
   })
-  .strict({ message: "Field tidak dikenal" });
+  .refine(
+    (val) => {
+      const parsed = new Date(val);
+      return !isNaN(parsed.getTime());
+    },
+    {
+      message: "Format tanggal tidak valid.",
+    }
+  )
+  .refine(
+    (val) => {
+      const inputDate = new Date(val);
+      const now = new Date();
+      return inputDate <= now;
+    },
+    {
+      message: "Tanggal tidak boleh lebih dari sekarang.",
+    }
+  );
+
+export const paymentSchema = z.object({
+  userId: z
+    .string({
+      required_error: "User wajib dipilih.",
+      invalid_type_error: "User tidak valid.",
+    })
+    .min(1, "User wajib dipilih."),
+  amount: amountSchema,
+  paidAt: padAtSchema,
+});
 
 export const deletePaymentParamsSchema = z.object({
   id: z.string().min(1, "ID payment wajib diisi."),
