@@ -1,31 +1,9 @@
 import { z } from "zod";
 
-// Custom helper: Nama, Email, dsb.
-const nonEmptyString = (fieldName: string, min = 1) =>
-  z.string().superRefine((val, ctx) => {
-    const trimmed = val.trim();
-    if (!trimmed) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `${fieldName} wajib diisi`,
-      });
-      return;
-    }
-    if (trimmed.length < min) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.too_small,
-        minimum: min,
-        inclusive: true,
-        type: "string",
-        message: `${fieldName} minimal ${min} karakter`,
-      });
-    }
-  });
-
 // Helper: Nama
 const nameSchema = z
   .string({
-    required_error: "Inputan field salah.",
+    required_error: "Nama wajib diisi.",
     invalid_type_error: "Nama harus berupa string.",
   })
   .superRefine((val, ctx) => {
@@ -34,7 +12,7 @@ const nameSchema = z
     if (!trimmed) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Nama wajib diisi.",
+        message: "Nama tidak boleh kosong.",
       });
       return;
     }
@@ -56,6 +34,7 @@ const nameSchema = z
         message:
           "Nama hanya boleh mengandung huruf, spasi, titik, kutip, dan tanda hubung.",
       });
+      return;
     }
   });
 
@@ -88,7 +67,7 @@ const emailSchema = z
 // Username dengan validasi angka
 const usernameSchema = z
   .string({
-    required_error: "Inputan field salah.",
+    required_error: "Username wajib diisi.",
     invalid_type_error: "Username harus berupa string.",
   })
   .superRefine((val, ctx) => {
@@ -236,10 +215,10 @@ const usernameUpdateSchema = z.string().superRefine((val, ctx) => {
 
 export const updateAdminSchema = z
   .object({
-    name: nameSchema,
-    email: emailSchema,
-    username: usernameSchema,
-    role: roleSchema,
-    password: passwordSchema,
+    name: nameSchema.optional(),
+    email: emailSchema.optional(),
+    username: usernameSchema.optional(),
+    role: roleSchema.optional(),
+    password: passwordSchema.optional(),
   })
-  .strict(); // ⬅️ Wajib biar typo ke-detect
+  .strict();

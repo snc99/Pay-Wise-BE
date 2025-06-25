@@ -10,6 +10,7 @@ import {
   userIdParamSchema,
 } from "../validations/user.schema";
 import { Prisma } from "@prisma/client";
+import { formatZodError } from "../utils/zodErrorFormatter";
 
 export const getAllUsers = async (
   req: AuthenticatedRequest,
@@ -72,35 +73,20 @@ export const createUser = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
-  // Optional: Deteksi field tidak dikenal
-  const allowedFields = ["name", "phone", "address"];
-  const invalidFields = Object.keys(req.body).filter(
-    (key) => !allowedFields.includes(key)
-  );
+  const result = createUserSchema.safeParse(req.body);
 
-  if (invalidFields.length > 0) {
-    res.status(400).json({
-      success: false,
-      status: 400,
-      message: `Field tidak dikenal: ${invalidFields.join(", ")}`,
-    });
-    return;
-  }
-
-  // Validasi schema
-  const parsed = createUserSchema.safeParse(req.body);
-
-  if (!parsed.success) {
+  if (!result.success) {
+    const formattedErrors = formatZodError(result.error);
     res.status(400).json({
       success: false,
       status: 400,
       message: "Validasi gagal",
-      errors: parsed.error.flatten().fieldErrors,
+      errors: formattedErrors,
     });
     return;
   }
 
-  const { name, phone, address } = parsed.data;
+  const { name, phone, address } = result.data;
 
   try {
     const newUser = await prisma.user.create({
@@ -118,9 +104,8 @@ export const createUser = async (
         address: newUser.address,
       },
     });
-    return;
   } catch (err) {
-    next(err); // Ditangani middleware errorHandler
+    next(err);
   }
 };
 
@@ -131,49 +116,37 @@ export const updateUser = async (
 ): Promise<void> => {
   // ✅ Validasi parameter ID
   const parsedId = userIdParamSchema.safeParse(req.params);
+
   if (!parsedId.success) {
     res.status(400).json({
       success: false,
       status: 400,
       message: "Validasi parameter gagal",
-      errors: parsedId.error.flatten().fieldErrors,
+      errors: formatZodError(parsedId.error),
     });
     return;
   }
 
   const { id } = parsedId.data;
 
-  // ✅ Deteksi field tidak dikenal
-  const allowedFields = ["name", "phone", "address"];
-  const invalidFields = Object.keys(req.body).filter(
-    (key) => !allowedFields.includes(key)
-  );
-
-  if (invalidFields.length > 0) {
-    res.status(400).json({
-      success: false,
-      status: 400,
-      message: `Field tidak dikenal: ${invalidFields.join(", ")}`,
-    });
-    return;
-  }
-
   // ✅ Validasi body
-  const parsedBody = updateUserSchema.safeParse(req.body);
-  if (!parsedBody.success) {
+  const result = updateUserSchema.safeParse(req.body);
+  if (!result.success) {
+    const formattedErrors = formatZodError(result.error);
+
     res.status(400).json({
       success: false,
       status: 400,
       message: "Validasi gagal",
-      errors: parsedBody.error.flatten().fieldErrors,
+      errors: formattedErrors,
     });
     return;
   }
 
-  const updateData = parsedBody.data;
+  const { name, phone, address } = result.data;
 
-  // ✅ Pastikan minimal satu field dikirim
-  if (Object.keys(updateData).length === 0) {
+  // ✅ Pastikan minimal 1 field dikirim
+  if (name === undefined && phone === undefined && address === undefined) {
     res.status(400).json({
       success: false,
       status: 400,
@@ -185,7 +158,6 @@ export const updateUser = async (
   try {
     // ✅ Pastikan user ada
     const existingUser = await prisma.user.findUnique({ where: { id } });
-
     if (!existingUser) {
       res.status(404).json({
         success: false,
@@ -195,7 +167,13 @@ export const updateUser = async (
       return;
     }
 
-    // ✅ Update user
+    // ✅ Bangun data update
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (phone !== undefined) updateData.phone = phone;
+    if (address !== undefined) updateData.address = address;
+
+    // ✅ Lakukan update
     const updated = await prisma.user.update({
       where: { id },
       data: updateData,
@@ -204,19 +182,16 @@ export const updateUser = async (
         name: true,
         phone: true,
         address: true,
-        updatedAt: true,
       },
     });
 
     res.status(200).json({
       success: true,
-      status: 200,
       message: `${updated.name} berhasil diperbarui`,
       data: updated,
     });
-    return;
   } catch (err) {
-    next(err); // akan ditangani middleware errorHandler
+    next(err);
   }
 };
 

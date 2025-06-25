@@ -85,6 +85,7 @@ export const createAdmin = async (
     const formattedErrors = formatZodError(result.error);
 
     res.status(400).json({
+      success: false,
       status: 400,
       message: "Validasi gagal",
       errors: formattedErrors,
@@ -95,9 +96,12 @@ export const createAdmin = async (
   const { username, password, role, email, name } = result.data;
 
   try {
-    const existingUsername = await prisma.admin.findUnique({ where: { username } });
+    const existingUsername = await prisma.admin.findUnique({
+      where: { username },
+    });
     if (existingUsername) {
       res.status(409).json({
+        success: false,
         status: 409,
         message: "Validasi gagal",
         errors: {
@@ -110,6 +114,7 @@ export const createAdmin = async (
     const existingEmail = await prisma.admin.findUnique({ where: { email } });
     if (existingEmail) {
       res.status(409).json({
+        success: false,
         status: 409,
         message: "Validasi gagal",
         errors: {
@@ -158,9 +163,12 @@ export const updateAdmin = async (
   // Validasi input
   const result = updateAdminSchema.safeParse(req.body);
   if (!result.success) {
+    const formattedErrors = formatZodError(result.error);
     res.status(400).json({
+      success: false,
+      status: 400,
       message: "Validasi gagal",
-      errors: result.error.flatten().fieldErrors,
+      errors: formattedErrors,
     });
     return;
   }
@@ -174,48 +182,54 @@ export const updateAdmin = async (
       return;
     }
 
-    // Cek duplikat username (kecuali milik dia sendiri)
-    const existingUsername = await prisma.admin.findFirst({
-      where: {
-        username,
-        id: { not: id },
-      },
-    });
-
-    if (existingUsername) {
-      res.status(409).json({
-        success: false,
-        status: 409,
-        message: `Username ${username} sudah digunakan`,
-        field: "username",
+    // ✅ Cek duplikat username hanya jika dikirim
+    if (username) {
+      const existingUsername = await prisma.admin.findFirst({
+        where: {
+          username,
+          id: { not: id },
+        },
       });
-      return;
+
+      if (existingUsername) {
+        res.status(409).json({
+          success: false,
+          status: 409,
+          message: `Username ${username} sudah digunakan`,
+          field: "username",
+        });
+        return;
+      }
     }
 
-    // Cek duplikat email (kecuali milik dia sendiri)
-    const existingEmail = await prisma.admin.findFirst({
-      where: {
-        email,
-        id: { not: id },
-      },
-    });
-
-    if (existingEmail) {
-      res.status(409).json({
-        success: false,
-        status: 409,
-        message: `Email ${email} sudah digunakan`,
-        field: "email",
+    // ✅ Cek duplikat email hanya jika dikirim
+    if (email) {
+      const existingEmail = await prisma.admin.findFirst({
+        where: {
+          email,
+          id: { not: id },
+        },
       });
-      return;
+
+      if (existingEmail) {
+        res.status(409).json({
+          success: false,
+          status: 409,
+          message: `Email ${email} sudah digunakan`,
+          field: "email",
+        });
+        return;
+      }
     }
 
-    const updateData: any = { name, email, username, role };
-
+    // ✅ Bangun updateData hanya dari field yang dikirim
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (email !== undefined) updateData.email = email;
+    if (username !== undefined) updateData.username = username;
+    if (role !== undefined) updateData.role = role;
     if (password) {
-      const hashed = await bcrypt.hash(password, 10);
-      updateData.password = hashed;
-
+      updateData.password = await bcrypt.hash(password, 10);
       await redis.del(`token:${id}`); // force logout
     }
 
@@ -226,6 +240,7 @@ export const updateAdmin = async (
 
     res.json({
       success: true,
+      status: 200,
       message: `${updated.name} berhasil diperbarui`,
       data: {
         id: updated.id,
