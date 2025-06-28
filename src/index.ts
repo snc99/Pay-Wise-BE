@@ -8,11 +8,13 @@ import paymentRoutes from "./routes/payment.routes";
 import "./cron/paymentCleaner";
 import pingRoutes from "./routes/ping.routes";
 import { errorHandler } from "./middlewares/errorHandler";
+import { setupSwagger } from "./swagger";
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
+setupSwagger(app);
 
 app.use("/", pingRoutes);
 app.use("/api/auth", authRoutes);
