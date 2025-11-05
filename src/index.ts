@@ -5,7 +5,6 @@ import adminRoutes from "./routes/admin.routes";
 import userRoutes from "./routes/user.routes";
 import debtRoutes from "./routes/debt.routes";
 import paymentRoutes from "./routes/payment.routes";
-// import "./cron/paymentCleaner";
 import pingRoutes from "./routes/ping.routes";
 import { errorHandler } from "./middlewares/errorHandler";
 import { setupSwagger } from "./swagger";
