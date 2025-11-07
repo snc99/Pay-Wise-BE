@@ -4,11 +4,9 @@ import { Express } from "express";
 import { schemas } from "./components/schemas";
 import { responses } from "./components/responses";
 import { tags } from "./tags";
-import dotenv from "dotenv";
+import { ENV } from "../config/env"
 
-dotenv.config();
-
-const serverUrl = process.env.SERVER_URL || "http://localhost:8080";
+const serverUrl = ENV.SERVER_URL;
 
 
 const options = {

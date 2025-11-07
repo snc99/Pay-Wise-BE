@@ -1,10 +1,10 @@
-// src/services/auth.service.ts
 import bcrypt from "bcryptjs";
-import { generateToken } from "../utils/jwt";
 import jwt from "jsonwebtoken";
-import { redis } from "../utils/redis";
 import { Role } from "@prisma/client";
-import prisma from "../prisma/client";
+import { prisma } from "../prisma/client";
+import { redis } from "../utils/redis";
+import { generateToken } from "../utils/jwt";
+import { ENV } from "../config/env"; // ✅ tambahkan ini
 
 interface LoginResponse {
   token: string;
@@ -27,6 +27,7 @@ export const loginService = async (
   const isValid = await bcrypt.compare(password, admin.password);
   if (!isValid) return null;
 
+  // ✅ Gunakan secret dari config
   const token = generateToken({
     id: admin.id,
     role: admin.role,
@@ -35,7 +36,14 @@ export const loginService = async (
 
   const decoded = jwt.decode(token) as { exp: number };
   const ttl = decoded.exp - Math.floor(Date.now() / 1000);
+
+  // ✅ Redis dari config sudah diatur di utils/redis
   await redis.set(`token:${admin.id}`, token, { ex: ttl });
+
+  // (Opsional) Logging kecil biar tahu mode environment
+  if (ENV.IS_DEV) {
+    console.log(`[DEV] Login success for: ${admin.username}`);
+  }
 
   return {
     token,
