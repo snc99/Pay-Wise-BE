@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from "express";
-import prisma from "../prisma/client";
+import {prisma} from "../prisma/client";
 import { Prisma } from "@prisma/client";
 import { debtSchema, deleteDebtParamsSchema } from "../validations/debt.schema";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";

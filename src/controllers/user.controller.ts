@@ -1,7 +1,7 @@
 import { NextFunction } from "express";
 // controllers/user.controller.ts
 import { Response } from "express";
-import prisma from "../prisma/client";
+import {prisma} from "../prisma/client";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";
 import {
   createUserSchema,

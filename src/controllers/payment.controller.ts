@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { Prisma } from "@prisma/client";
-import prisma from "../prisma/client";
+import {prisma} from "../prisma/client";
 import {
   deletePaymentParamsSchema,
   paymentSchema,

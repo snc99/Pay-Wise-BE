@@ -1,7 +1,7 @@
 import bcrypt from "bcrypt";
 import { NextFunction, Response } from "express";
 import { redis } from "../utils/redis";
-import prisma from "../prisma/client";
+import { prisma } from "../prisma/client";
 import { Prisma } from "@prisma/client";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware"; // pastikan path sesuai
 import {
