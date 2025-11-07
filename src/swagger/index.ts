@@ -8,7 +8,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const serverUrl = process.env.SWAGGER_SERVER_URL || "http://localhost:8080";
+const serverUrl = process.env.SERVER_URL || "http://localhost:8080";
 
 
 const options = {
