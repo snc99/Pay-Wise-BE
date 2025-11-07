@@ -4,6 +4,12 @@ import { Express } from "express";
 import { schemas } from "./components/schemas";
 import { responses } from "./components/responses";
 import { tags } from "./tags";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const serverUrl = process.env.SWAGGER_SERVER_URL || "http://localhost:8080";
+
 
 const options = {
   definition: {
@@ -14,7 +20,7 @@ const options = {
     },
     servers: [
       {
-        url: "http://localhost:3000",
+        url: serverUrl,
         description: "Local development",
       },
     ],
