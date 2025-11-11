@@ -11,28 +11,36 @@ import paymentRoutes from "./routes/payment.routes";
 import pingRoutes from "./routes/ping.routes";
 import { errorHandler } from "./middlewares/errorHandler";
 import { setupSwagger } from "./swagger";
+import { ENV } from "./config/env";
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
 app.use(cookieParser());
-setupSwagger(app);
 
-/**
- * CORS configuration:
- * - Allow origins from env FRONTEND_URL (comma-separated) and http://localhost:3000 for dev.
- * - credentials: true enables cookies if you later use httpOnly cookie auth.
- */
+// Normalize FRONTEND_URLS (fallback http://localhost:3000)
 const rawOrigins = (process.env.FRONTEND_URLS || "http://localhost:3000")
   .split(",")
-  .map((s) => s.trim());
-const allowedOrigins = Array.from(new Set(rawOrigins)); // unique
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const normalizeOrigin = (o: string) => {
+  try {
+    if (o.startsWith("http://") || o.startsWith("https://")) {
+      return new URL(o).origin;
+    }
+    return o;
+  } catch {
+    return o;
+  }
+};
+
+const allowedOrigins = Array.from(new Set(rawOrigins.map(normalizeOrigin)));
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // allow requests with no origin like curl, mobile apps, server-to-server
       if (!origin) return callback(null, true);
       if (allowedOrigins.indexOf(origin) !== -1) {
         return callback(null, true);
@@ -47,14 +55,15 @@ app.use(
       "Origin",
       "X-Requested-With",
     ],
-    credentials: true, // set true if you plan to use cookies; harmless for Bearer token
+    credentials: true,
   })
 );
 
-// ensure preflight requests are handled
-app.options("*", cors());
+// Debug logging (bisa dihapus setelah ok)
+console.log("ENV.SERVER_URL:", ENV.SERVER_URL);
+console.log("FRONTEND_URLS:", process.env.FRONTEND_URLS);
 
-/* Routes */
+// Mount routes
 app.use("/", pingRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
@@ -62,12 +71,19 @@ app.use("/api/user", userRoutes);
 app.use("/api/debt", debtRoutes);
 app.use("/api/payment", paymentRoutes);
 
-/* 404 handler */
+// Only enable Swagger in development
+if (ENV.IS_DEV) {
+  setupSwagger(app);
+} else {
+  console.log("Swagger disabled in production.");
+}
+
+// 404 handler
 app.use((req, res) => {
   res.status(404).json({ message: "Endpoint tidak ditemukan." });
 });
 
-/* Error handler */
+// Error handler
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;
