@@ -71,11 +71,12 @@ app.use("/api/user", userRoutes);
 app.use("/api/debt", debtRoutes);
 app.use("/api/payment", paymentRoutes);
 
-// Only enable Swagger in development
-if (ENV.IS_DEV) {
+// Only enabled Swagger in development
+if (process.env.ENABLE_SWAGGER === "true") {
   setupSwagger(app);
+  console.log("Swagger enabled (by ENV)");
 } else {
-  console.log("Swagger disabled in production.");
+  console.log("Swagger disabled");
 }
 
 // 404 handler
