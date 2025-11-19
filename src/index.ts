@@ -8,6 +8,7 @@ import adminRoutes from "./routes/admin.routes";
 import userRoutes from "./routes/user.routes";
 import debtRoutes from "./routes/debt.routes";
 import paymentRoutes from "./routes/payment.routes";
+import dashboardRoutes from "./routes/dashboard.routes";
 import pingRoutes from "./routes/ping.routes";
 import { errorHandler } from "./middlewares/errorHandler";
 import { setupSwagger } from "./swagger";
@@ -70,6 +71,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/debt", debtRoutes);
 app.use("/api/payment", paymentRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 // Only enabled Swagger in development
 if (process.env.ENABLE_SWAGGER === "true") {
