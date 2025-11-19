@@ -1,4 +1,5 @@
-import {prisma} from "../prisma/client";
+// controllers/auth.controller.ts
+import { prisma } from "../prisma/client";
 import jwt from "jsonwebtoken";
 import { NextFunction, Request, Response } from "express";
 import { redis } from "../utils/redis";
@@ -7,6 +8,8 @@ import { AuthenticatedRequest } from "../middlewares/auth.middleware";
 import { removeToken } from "../utils/removeToken";
 import { loginSchema } from "../validations/auth.schema";
 import { loginService } from "../services/auth.service";
+
+const DEFAULT_COOKIE_TTL_SECONDS = 60 * 60 * 24; // 1 day fallback
 
 export const login = async (
   req: Request,
@@ -38,11 +41,35 @@ export const login = async (
       return;
     }
 
+    const token = result.token;
+
+    // Hitung maxAge dari token exp
+    let maxAgeMs = DEFAULT_COOKIE_TTL_SECONDS * 1000;
+    try {
+      const decoded: any = jwt.decode(token);
+      if (decoded?.exp && typeof decoded.exp === "number") {
+        const nowSec = Math.floor(Date.now() / 1000);
+        const ttlSec = Math.max(1, decoded.exp - nowSec);
+        maxAgeMs = ttlSec * 1000;
+      }
+    } catch (err) {
+      // ignore decode error, pakai fallback
+    }
+
+    // ✅ SET COOKIE - UPDATED
+    res.cookie("pw_token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production", // true di production, false di dev
+      sameSite: "lax", // ✅ UBAH dari "none" ke "lax"
+      path: "/",
+      maxAge: maxAgeMs,
+    });
+
+    // Kembalikan response tanpa token (karena sudah di cookie)
     res.status(200).json({
       success: true,
       status: 200,
       message: "Login berhasil",
-      token: result.token,
       user: result.user,
     });
     return;
@@ -102,56 +129,63 @@ export const logout = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).json({
-      success: false,
-      status: 401,
-      message: "Token tidak ditemukan",
-    });
-    return;
-  }
-
-  const token = authHeader.split(" ")[1];
-
   try {
-    const decoded = jwt.decode(token) as { exp?: number; id?: string };
+    const cookieToken = (req as any).cookies?.pw_token;
+    const authHeader = req.headers.authorization;
+    const headerToken =
+      authHeader &&
+      typeof authHeader === "string" &&
+      authHeader.startsWith("Bearer ")
+        ? authHeader.split(" ")[1]
+        : undefined;
 
-    if (!decoded?.exp) {
-      res.status(400).json({
-        success: false,
-        status: 400,
-        message: "Token tidak valid",
+    const token = cookieToken ?? headerToken;
+
+    if (!token) {
+      res.clearCookie("pw_token", {
+        path: "/",
+        sameSite: "lax",
       });
+      res.json({ success: true, status: 200, message: "Logged out" });
       return;
+    }
+
+    let decoded: any = null;
+    try {
+      decoded = jwt.decode(token) as { exp?: number; id?: string } | null;
+    } catch (e) {
+      decoded = null;
     }
 
     const nowInSeconds = Math.floor(Date.now() / 1000);
-    const ttlInSeconds = decoded.exp - nowInSeconds;
+    const ttlInSeconds =
+      decoded && typeof decoded.exp === "number"
+        ? Math.max(1, decoded.exp - nowInSeconds)
+        : 24 * 3600;
 
-    if (ttlInSeconds <= 0) {
-      res.status(400).json({
-        success: false,
-        status: 400,
-        message: "Token sudah kedaluwarsa",
-      });
-      return;
+    // Blacklist token di redis
+    try {
+      await redis.set(`blacklist:${token}`, "1", { ex: ttlInSeconds });
+    } catch (e) {
+      console.warn("[Logout] failed to set blacklist:", e);
     }
 
-    // Simpan token ke Redis blacklist
-    await redis.set(`blacklist:${token}`, "true", { ex: ttlInSeconds });
-
-    // Hapus token aktif dari Redis jika ada user.id
-    if (decoded.id) {
-      await removeToken(decoded.id);
+    // Hapus token aktif
+    if (decoded?.id) {
+      try {
+        await removeToken(decoded.id);
+      } catch (e) {
+        console.warn("[Logout] failed to remove active token:", e);
+      }
     }
 
-    res.status(200).json({
-      success: true,
-      status: 200,
-      message: "Logout berhasil",
+    // ✅ CLEAR COOKIE - UPDATED
+    res.clearCookie("pw_token", {
+      path: "/",
+      sameSite: "lax", // ✅ TAMBAHKAN sameSite yang sama
     });
+
+    res.json({ success: true, status: 200, message: "Logout berhasil" });
   } catch (err) {
     next(err);
   }

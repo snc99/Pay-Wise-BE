@@ -1,3 +1,4 @@
+// middlewares/auth.middleware.ts
 import { Request, Response, NextFunction } from "express";
 import { Role } from "@prisma/client";
 import { verifyToken } from "../utils/jwt";
@@ -18,8 +19,17 @@ export const authenticate = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
+  // Ambil token dari Authorization header (Bearer ...) terlebih dahulu
   const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(" ")[1];
+  let token =
+    authHeader && typeof authHeader === "string"
+      ? authHeader.split(" ")[1]
+      : undefined;
+
+  // Fallback: ambil token dari cookie pw_token jika header tidak ada
+  if (!token && (req as any).cookies && (req as any).cookies.pw_token) {
+    token = (req as any).cookies.pw_token;
+  }
 
   if (!token) {
     res.status(401).json({
@@ -31,9 +41,15 @@ export const authenticate = async (
   }
 
   try {
-    // 1. Cek blacklist
-    const isBlacklisted = await redis.get(`blacklist:${token}`);
-    if (isBlacklisted) {
+    const trimmedToken = token.trim();
+
+    // 1) cek blacklist
+    const blacklistedValue = await redis.get(`blacklist:${trimmedToken}`);
+    if (blacklistedValue) {
+      console.warn(
+        "[Auth] token blacklisted:",
+        trimmedToken.slice(0, 10) + "..."
+      );
       res.status(401).json({
         success: false,
         status: 401,
@@ -42,12 +58,21 @@ export const authenticate = async (
       return;
     }
 
-    // 2. Decode & verifikasi token
-    const decoded = verifyToken(token) as AuthenticatedUser;
+    // 2) decode & verify
+    const decoded = verifyToken(trimmedToken) as AuthenticatedUser;
 
-    // 3. Cek apakah token masih aktif (tersimpan di Redis)
+    if (!decoded || !decoded.id) {
+      console.warn("[Auth] verifyToken returned falsy:", decoded);
+      res
+        .status(401)
+        .json({ success: false, status: 401, message: "Token tidak valid" });
+      return;
+    }
+
+    // 3) cek apakah token masih aktif (tersimpan di Redis)
     const activeToken = await redis.get(`token:${decoded.id}`);
-    if (!activeToken || activeToken !== token) {
+    if (!activeToken) {
+      console.warn("[Auth] no active token for user:", decoded.id);
       res.status(401).json({
         success: false,
         status: 401,
@@ -56,8 +81,21 @@ export const authenticate = async (
       return;
     }
 
-    // 4. Cek role
-    if (!Object.values(Role).includes(decoded.role)) {
+    if (
+      typeof activeToken !== "string" ||
+      activeToken.trim() !== trimmedToken
+    ) {
+      console.warn("[Auth] token mismatch for user:", decoded.id);
+      res.status(401).json({
+        success: false,
+        status: 401,
+        message: "Token tidak aktif lagi. Silakan login ulang.",
+      });
+      return;
+    }
+
+    // 4) cek role validitas
+    if (!decoded.role || !Object.values(Role).includes(decoded.role)) {
       res.status(403).json({
         success: false,
         status: 403,
@@ -66,14 +104,17 @@ export const authenticate = async (
       return;
     }
 
-    // 5. Lolos semua cek
+    // 5) sukses
     req.user = decoded;
     next();
-  } catch (err) {
-    res.status(403).json({
+    return;
+  } catch (err: any) {
+    console.error("[Auth] verify error:", err?.message || err);
+    res.status(401).json({
       success: false,
-      status: 403,
+      status: 401,
       message: "Token tidak valid",
     });
+    return;
   }
 };
