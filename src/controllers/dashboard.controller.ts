@@ -47,7 +47,7 @@ export const getCards = async (
     res.status(200).json({
       success: true,
       status: 200,
-      message: "Dashboard cards data fetched",
+      message: "Data dashboard berhasil diambil",
       data: {
         totalUsers,
         totalDebts: Number(totalDebtsResult._sum.amount || 0),
@@ -94,7 +94,7 @@ export const getComparison = async (
       res.status(200).json({
         success: true,
         status: 200,
-        message: "Comparison data fetched",
+        message: "Data comparison berhasil diambil",
         data: {
           totalDebts: Number(debtSum._sum.amount || 0),
           totalPayments: Number(paymentSum._sum.amount || 0),
@@ -111,7 +111,7 @@ export const getComparison = async (
     res.status(200).json({
       success: true,
       status: 200,
-      message: "Comparison data fetched",
+      message: "Data comparison berhasil diambil",
       data: {
         totalDebts: Number(totalDebts._sum.amount || 0),
         totalPayments: Number(totalPayments._sum.amount || 0),
@@ -175,7 +175,7 @@ export const getDailyPaymentTrends = async (
     res.status(200).json({
       success: true,
       status: 200,
-      message: "Daily payment trends fetched",
+      message: "Data pembayaran harian berhasil diambil",
       data: { labels, data },
     });
     return;
