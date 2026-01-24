@@ -1,7 +1,7 @@
 import { NextFunction } from "express";
 // controllers/user.controller.ts
 import { Response } from "express";
-import {prisma} from "../prisma/client";
+import { prisma } from "../prisma/client";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";
 import {
   createUserSchema,
@@ -15,7 +15,7 @@ import { formatZodError } from "../utils/zodErrorFormatter";
 export const getAllUsers = async (
   req: AuthenticatedRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   const page = parseInt(req.query.page as string) || 1;
   const search = (req.query.search as string) || "";
@@ -71,7 +71,7 @@ export const getAllUsers = async (
 export const createUser = async (
   req: AuthenticatedRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   const result = createUserSchema.safeParse(req.body);
 
@@ -112,7 +112,7 @@ export const createUser = async (
 export const updateUser = async (
   req: AuthenticatedRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   // ✅ Validasi parameter ID
   const parsedId = userIdParamSchema.safeParse(req.params);
@@ -198,7 +198,7 @@ export const updateUser = async (
 export const deleteUser = async (
   req: AuthenticatedRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   const parsed = deleteUserParamSchema.safeParse(req.params);
   if (!parsed.success) {
@@ -220,6 +220,7 @@ export const deleteUser = async (
         status: 404,
         message: "User tidak ditemukan.",
       });
+      return;
     }
 
     const debts = await prisma.debt.findMany({
@@ -230,7 +231,7 @@ export const deleteUser = async (
     const hasUnpaidDebt = debts.some((debt) => {
       const totalPaid = debt.payments.reduce(
         (sum, p) => sum + Number(p.amount),
-        0
+        0,
       );
       return totalPaid < Number(debt.amount);
     });
@@ -239,9 +240,9 @@ export const deleteUser = async (
       res.status(400).json({
         success: false,
         status: 400,
-        message:
-          "User masih memiliki utang yang belum lunas, tidak dapat dihapus.",
+        message: "User masih memiliki utang yang belum lunas.",
       });
+      return;
     }
 
     await prisma.user.delete({ where: { id } });
@@ -259,7 +260,7 @@ export const deleteUser = async (
 export const searchUsers = async (
   req: AuthenticatedRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   const query = (req.query.query as string) || "";
   const limit = parseInt(req.query.limit as string) || 10;
@@ -310,7 +311,7 @@ export const searchUsers = async (
 export const getUsersWithRemainingDebt = async (
   req: AuthenticatedRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   const search = (req.query.search as string)?.toLowerCase() || "";
   const limitRaw = parseInt(req.query.limit as string);
@@ -336,7 +337,7 @@ export const getUsersWithRemainingDebt = async (
     for (const debt of debts) {
       const totalPaid = debt.payments.reduce(
         (sum, p) => sum + Number(p.amount),
-        0
+        0,
       );
       const remaining = Number(debt.amount) - totalPaid;
 

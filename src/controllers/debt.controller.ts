@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from "express";
-import {prisma} from "../prisma/client";
+import { prisma } from "../prisma/client";
 import { Prisma } from "@prisma/client";
 import { debtSchema, deleteDebtParamsSchema } from "../validations/debt.schema";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";
@@ -8,7 +8,7 @@ import { formatZodError } from "../utils/zodErrorFormatter";
 export const getAllDebts = async (
   req: AuthenticatedRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   const page = parseInt(req.query.page as string) || 1;
   const search = (req.query.search as string) || "";
@@ -65,7 +65,7 @@ export const getAllDebts = async (
 export const createDebt = async (
   req: AuthenticatedRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const parsed = debtSchema.safeParse(req.body);
@@ -131,7 +131,7 @@ export const createDebt = async (
 export const deleteDebt = async (
   req: AuthenticatedRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   const parsed = deleteDebtParamsSchema.safeParse(req.params);
 
@@ -167,7 +167,7 @@ export const deleteDebt = async (
     // Cek utang ini sudah lunas
     const totalPayment = debt.payments.reduce(
       (sum, p) => sum + Number(p.amount),
-      0
+      0,
     );
     const isCurrentDebtLunas = totalPayment >= Number(debt.amount);
 
@@ -183,7 +183,7 @@ export const deleteDebt = async (
     const hasUnpaidOtherDebt = otherDebts.some((d) => {
       const totalPaid = d.payments.reduce(
         (sum, p) => sum + Number(p.amount),
-        0
+        0,
       );
       return totalPaid < Number(d.amount);
     });
@@ -192,8 +192,7 @@ export const deleteDebt = async (
       res.status(400).json({
         success: false,
         status: 400,
-        message:
-          "Tidak bisa menghapus utang karena masih ada utang yang belum lunas.",
+        message: "Utang ini belum lunas dan tidak dapat dihapus.",
       });
       return;
     }
