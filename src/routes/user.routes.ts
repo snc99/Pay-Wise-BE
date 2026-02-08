@@ -3,7 +3,6 @@ import {
   createUser,
   deleteUser,
   getAllUsers,
-  getUsersWithRemainingDebt,
   searchUsers,
   updateUser,
 } from "../controllers/user.controller";
@@ -149,21 +148,5 @@ router.delete("/:id", authenticate, deleteUser);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.get("/search", authenticate, searchUsers);
-
-/**
- * @swagger
- * /api/user/select-for-payment:
- *   get:
- *     summary: Ambil user dengan sisa utang
- *     tags: [Dropdown Select]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         $ref: '#/components/responses/UserDropdownAmountResponse'
- *       500:
- *         $ref: '#/components/responses/InternalServerError'
- */
-router.get("/select-for-payment", authenticate, getUsersWithRemainingDebt);
 
 export default router;

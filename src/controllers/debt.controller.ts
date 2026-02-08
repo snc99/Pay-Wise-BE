@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { prisma } from "../prisma/client";
 import { Prisma } from "@prisma/client";
-import { debtSchema, deleteDebtParamsSchema } from "../validations/debt.schema";
+import { debtSchema } from "../validations/debt.schema";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";
 import { formatZodError } from "../utils/zodErrorFormatter";
 
@@ -16,45 +16,63 @@ export const getAllDebts = async (
   const skip = (page - 1) * limit;
 
   try {
-    const where: Prisma.DebtWhereInput = search
-      ? {
-          user: {
-            is: {
+    const where: Prisma.DebtCycleWhereInput = {
+      ...(search
+        ? {
+            user: {
               name: {
                 contains: search,
                 mode: "insensitive",
               },
             },
-          },
-        }
-      : {};
+          }
+        : {}),
+    };
 
-    const [debts, totalDebts] = await Promise.all([
-      prisma.debt.findMany({
+    const [cycles, total] = await Promise.all([
+      prisma.debtCycle.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { date: "desc" },
+        orderBy: { createdAt: "desc" },
         include: {
           user: {
             select: { id: true, name: true },
           },
+          debts: {
+            orderBy: { date: "desc" },
+            take: 1,
+            select: {
+              note: true,
+              date: true,
+            },
+          },
         },
       }),
-      prisma.debt.count({ where }),
+      prisma.debtCycle.count({ where }),
     ]);
+
+    const items = cycles.map((c) => ({
+      id: c.id,
+      user: {
+        id: c.user.id,
+        name: c.user.name,
+      },
+      total: c.total,
+      isPaid: c.isPaid,
+      paidAt: c.paidAt,
+      createdAt: c.createdAt,
+    }));
 
     res.status(200).json({
       success: true,
-      status: 200,
-      message: "Daftar debt berhasil diambil",
       data: {
-        items: debts,
+        items,
       },
       pagination: {
         currentPage: page,
-        totalPages: Math.ceil(totalDebts / limit),
-        totalItems: totalDebts,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
       },
     });
   } catch (err) {
@@ -66,10 +84,9 @@ export const createDebt = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction,
-): Promise<void> => {
+) => {
   try {
     const parsed = debtSchema.safeParse(req.body);
-
     if (!parsed.success) {
       res.status(400).json({
         success: false,
@@ -80,132 +97,218 @@ export const createDebt = async (
       return;
     }
 
-    const { userId, amount, date } = parsed.data;
+    const { userId, amount, date, note } = parsed.data;
 
-    const newDebt = await prisma.debt.create({
+    const result = await prisma.$transaction(async (tx) => {
+      let cycle = await tx.debtCycle.findFirst({
+        where: { userId, isPaid: false },
+      });
+
+      if (!cycle) {
+        try {
+          cycle = await tx.debtCycle.create({
+            data: { userId },
+          });
+        } catch (err: any) {
+          if (err.code === "P2002") {
+            cycle = await tx.debtCycle.findFirst({
+              where: { userId, isPaid: false },
+            });
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      // 🛡️ ini bikin TS & runtime aman
+      if (!cycle) {
+        throw new Error("Failed to get or create active debt cycle");
+      }
+
+      const debt = await tx.debt.create({
+        data: {
+          cycleId: cycle.id,
+          amount,
+          note,
+          date: new Date(date),
+        },
+      });
+
+      const updatedCycle = await tx.debtCycle.update({
+        where: { id: cycle.id },
+        data: {
+          total: { increment: amount },
+        },
+      });
+
+      return { debt, cycle: updatedCycle };
+    });
+
+    res.status(201).json({
+      success: true,
+      status: 201,
+      message: "Utang berhasil ditambahkan",
       data: {
-        userId,
-        amount: new Prisma.Decimal(amount),
-        date: new Date(date),
+        cycleId: result.cycle.id,
+        total: result.cycle.total,
+        debt: {
+          id: result.debt.id,
+          amount: result.debt.amount,
+          date: result.debt.date,
+        },
+      },
+    });
+  } catch (err) {
+    console.error("POST /debt error:", err);
+    next(err);
+  }
+};
+
+export const getDebtItems = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const { cycleId } = req.params;
+
+    const cycle = await prisma.debtCycle.findUnique({
+      where: { id: cycleId },
+      include: {
+        user: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+
+    if (!cycle) {
+      res.status(404).json({
+        success: false,
+        status: 404,
+        message: "Debt cycle tidak ditemukan",
+      });
+      return;
+    }
+
+    const debts = await prisma.debt.findMany({
+      where: { cycleId },
+      orderBy: { date: "asc" },
+    });
+
+    res.status(200).json({
+      success: true,
+      status: 200,
+      message: "Detail hutang berhasil diambil",
+      data: {
+        cycle: {
+          id: cycle.id,
+          total: cycle.total,
+          isPaid: cycle.isPaid,
+          paidAt: cycle.paidAt,
+          user: cycle.user,
+        },
+        items: debts,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+//  Mengembalikan daftar DebtCycle (invoice) yang belum lunas,
+export const getOpenDebtCycles = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  const search = (req.query.search as string) || "";
+  const limitRaw = parseInt(req.query.limit as string);
+  const limit = isNaN(limitRaw) || limitRaw <= 0 ? 10 : Math.min(limitRaw, 50);
+
+  try {
+    const cycles = await prisma.debtCycle.findMany({
+      where: {
+        isPaid: false,
+        ...(search
+          ? {
+              user: {
+                name: {
+                  contains: search,
+                  mode: "insensitive",
+                },
+              },
+            }
+          : {}),
+      },
+      include: {
+        user: {
+          select: { id: true, name: true },
+        },
+      },
+      take: limit,
+      orderBy: { createdAt: "desc" },
+    });
+
+    const items = cycles.map((c) => ({
+      cycleId: c.id,
+      userId: c.user.id,
+      userName: c.user.name,
+      total: c.total,
+    }));
+
+    res.status(200).json({
+      success: true,
+      status: 200,
+      message: "Daftar tagihan yang belum lunas",
+      data: { items },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getPublicDebts = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const search = (req.query.search as string) || "";
+
+    const cycles = await prisma.debtCycle.findMany({
+      where: {
+        ...(search
+          ? {
+              user: {
+                name: {
+                  contains: search,
+                  mode: "insensitive",
+                },
+              },
+            }
+          : {}),
       },
       include: {
         user: {
           select: { name: true },
         },
       },
+      orderBy: { createdAt: "desc" },
     });
 
-    res.status(201).json({
-      success: true,
-      status: 201,
-      message: `${newDebt.user.name} berhasil menambahkan utang.`,
-      data: {
-        userId: newDebt.userId,
-        amount: newDebt.amount,
-        date: newDebt.date,
-        user: {
-          name: newDebt.user.name,
-        },
-      },
-    });
-    return;
-  } catch (err) {
-    console.error("POST /debt error:", err);
-
-    if (
-      err instanceof Prisma.PrismaClientKnownRequestError &&
-      err.code === "P2003"
-    ) {
-      res.status(400).json({
-        success: false,
-        status: 400,
-        message: "User yang dipilih tidak ditemukan.",
-      });
-      return;
-    }
-
-    next(err);
-  }
-};
-
-export const deleteDebt = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction,
-): Promise<void> => {
-  const parsed = deleteDebtParamsSchema.safeParse(req.params);
-
-  if (!parsed.success) {
-    res.status(400).json({
-      success: false,
-      status: 400,
-      message: parsed.error.errors[0].message,
-    });
-    return;
-  }
-
-  const { id } = parsed.data;
-
-  try {
-    const debt = await prisma.debt.findUnique({
-      where: { id },
-      include: {
-        user: true,
-        payments: true,
-      },
-    });
-
-    if (!debt) {
-      res.status(404).json({
-        success: false,
-        status: 404,
-        message: "Data utang tidak ditemukan.",
-      });
-      return;
-    }
-
-    // Cek utang ini sudah lunas
-    const totalPayment = debt.payments.reduce(
-      (sum, p) => sum + Number(p.amount),
-      0,
-    );
-    const isCurrentDebtLunas = totalPayment >= Number(debt.amount);
-
-    // Cek apakah user punya utang lain yang belum lunas
-    const otherDebts = await prisma.debt.findMany({
-      where: {
-        userId: debt.userId,
-        id: { not: id },
-      },
-      include: { payments: true },
-    });
-
-    const hasUnpaidOtherDebt = otherDebts.some((d) => {
-      const totalPaid = d.payments.reduce(
-        (sum, p) => sum + Number(p.amount),
-        0,
-      );
-      return totalPaid < Number(d.amount);
-    });
-
-    if (!isCurrentDebtLunas || hasUnpaidOtherDebt) {
-      res.status(400).json({
-        success: false,
-        status: 400,
-        message: "Utang ini belum lunas dan tidak dapat dihapus.",
-      });
-      return;
-    }
-
-    // Hapus utang
-    await prisma.debt.delete({ where: { id } });
+    const items = cycles.map((c) => ({
+      id: c.id,
+      name: c.user.name,
+      total: c.total,
+      status: c.isPaid ? "paid" : "unpaid",
+    }));
 
     res.status(200).json({
       success: true,
       status: 200,
-      message: `Berhasil menghapus data utang ${debt.user.name}.`,
+      message: "Data tagihan pelanggan",
+      data: { items },
     });
-    return;
   } catch (err) {
     next(err);
   }

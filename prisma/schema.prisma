@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // url      = env("DATABASE_URL")
+  url      = env("DATABASE_URL") // Prisma 6 – ini OK, VSCode warning Prisma 7 bisa diabaikan
 }
 
 model Admin {
@@ -18,40 +18,57 @@ model Admin {
   updatedAt DateTime @updatedAt
 }
 
+enum Role {
+  SUPERADMIN
+  ADMIN
+}
+
 model User {
-  id        String   @id @default(cuid())
+  id        String      @id @default(cuid())
   name      String
   phone     String
   address   String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  cycles    DebtCycle[]
+  payments  Payment[]
+}
+
+model DebtCycle {
+  id        String   @id @default(cuid())
+  userId    String
+  isPaid    Boolean  @default(false)
+  total     Int     @default(0)
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  paidAt    DateTime?
+
+  user      User    @relation(fields: [userId], references: [id])
   debts     Debt[]
+  payment   Payment?
+
+  @@unique([userId, isPaid])
 }
 
 model Debt {
   id        String    @id @default(cuid())
-  userId    String
-  amount    Decimal
+  cycleId   String
+  amount    Int
+  note      String?
   date      DateTime
   createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  user      User      @relation(fields: [userId], references: [id])
-  payments  Payment[]
+
+  cycle     DebtCycle @relation(fields: [cycleId], references: [id])
 }
 
 model Payment {
   id        String    @id @default(cuid())
-  debtId    String
-  amount    Decimal
-  remaining Decimal
+  cycleId   String    @unique
+  userId    String
+  amount    Int
   paidAt    DateTime
   createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  debt      Debt      @relation(fields: [debtId], references: [id])
-}
 
-enum Role {
-  SUPERADMIN
-  ADMIN
+  cycle     DebtCycle @relation(fields: [cycleId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
 }

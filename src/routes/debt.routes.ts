@@ -1,8 +1,10 @@
 import { Router } from "express";
 import {
   createDebt,
-  deleteDebt,
   getAllDebts,
+  getDebtItems,
+  getOpenDebtCycles,
+  getPublicDebts,
 } from "../controllers/debt.controller";
 import { authenticate } from "../middlewares/auth.middleware";
 
@@ -68,26 +70,54 @@ router.post("/", authenticate, createDebt);
 
 /**
  * @swagger
- * /api/debt/{id}:
- *   delete:
- *     summary: Hapus data utang
+ * /api/debt/:cycleId/items:
+ *   get:
+ *     summary: Ambil semua item dalam satu invoice (debt cycle)
  *     tags: [Debt]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
- *         $ref: '#/components/responses/DebtDeleteResponse'
- *       400:
- *         $ref: '#/components/responses/BadRequestError'
- *       404:
- *         $ref: '#/components/responses/NotFoundError'
+ *         $ref: '#/components/responses/DebtItemsSuccessResponse(belom di buat swagernya)'
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.delete("/:id", deleteDebt);
+router.get("/:cycleId/items", authenticate, getDebtItems);
+
+/**
+ * @swagger
+ * /api/debt/open:
+ *   get:
+ *     summary: Ambil semua invoice yang belum lunas
+ *     tags: [Dropdown Select]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         $ref: '#/components/responses/UserDropdownAmountResponse'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get("/open", authenticate, getOpenDebtCycles);
+
+/**
+ * @swagger
+ * /api/debt/public:
+ *   get:
+ *     summary: Ambil semua data utang publik (tanpa autentikasi)
+ *     tags: [Debt]
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Keyword pencarian (nama, email, username, dll)
+ *     responses:
+ *       200:
+ *         $ref: '#/components/responses/PublicDebtListSuccessResponse'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get("/public", getPublicDebts);
 
 export default router;

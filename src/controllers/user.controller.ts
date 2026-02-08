@@ -213,8 +213,14 @@ export const deleteUser = async (
   const { id } = parsed.data;
 
   try {
-    const existingUser = await prisma.user.findUnique({ where: { id } });
-    if (!existingUser) {
+    const user = await prisma.user.findUnique({
+      where: { id },
+      include: {
+        cycles: true,
+      },
+    });
+
+    if (!user) {
       res.status(404).json({
         success: false,
         status: 404,
@@ -223,20 +229,9 @@ export const deleteUser = async (
       return;
     }
 
-    const debts = await prisma.debt.findMany({
-      where: { userId: id },
-      include: { payments: true },
-    });
+    const hasActiveCycle = user.cycles.some((c) => c.isPaid === false);
 
-    const hasUnpaidDebt = debts.some((debt) => {
-      const totalPaid = debt.payments.reduce(
-        (sum, p) => sum + Number(p.amount),
-        0,
-      );
-      return totalPaid < Number(debt.amount);
-    });
-
-    if (hasUnpaidDebt) {
+    if (hasActiveCycle) {
       res.status(400).json({
         success: false,
         status: 400,
@@ -245,9 +240,11 @@ export const deleteUser = async (
       return;
     }
 
-    await prisma.user.delete({ where: { id } });
+    await prisma.user.delete({
+      where: { id },
+    });
 
-    res.json({
+    res.status(200).json({
       success: true,
       status: 200,
       message: "User berhasil dihapus.",
@@ -304,80 +301,6 @@ export const searchUsers = async (
       },
     });
   } catch (err) {
-    next(err);
-  }
-};
-
-export const getUsersWithRemainingDebt = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction,
-): Promise<void> => {
-  const search = (req.query.search as string)?.toLowerCase() || "";
-  const limitRaw = parseInt(req.query.limit as string);
-  const limit = isNaN(limitRaw) || limitRaw <= 0 ? 10 : Math.min(limitRaw, 50);
-
-  try {
-    const debts = await prisma.debt.findMany({
-      include: {
-        user: true,
-        payments: {
-          where: {
-            deletedAt: null,
-          },
-        },
-      },
-    });
-
-    const userMap = new Map<
-      string,
-      { userName: string; totalRemaining: number }
-    >();
-
-    for (const debt of debts) {
-      const totalPaid = debt.payments.reduce(
-        (sum, p) => sum + Number(p.amount),
-        0,
-      );
-      const remaining = Number(debt.amount) - totalPaid;
-
-      if (remaining > 0) {
-        const userId = debt.user.id;
-        const userName = debt.user.name;
-
-        // ✅ Hanya masukkan jika cocok pencarian
-        if (!search || userName.toLowerCase().includes(search)) {
-          const existing = userMap.get(userId);
-          if (existing) {
-            existing.totalRemaining += remaining;
-          } else {
-            userMap.set(userId, {
-              userName,
-              totalRemaining: remaining,
-            });
-          }
-        }
-      }
-    }
-
-    // ✅ Bentuk hasil akhir
-    const result = Array.from(userMap.entries())
-      .map(([userId, data]) => ({
-        userId,
-        ...data,
-      }))
-      .slice(0, limit); // batas maksimal sesuai query
-
-    res.status(200).json({
-      success: true,
-      status: 200,
-      message: "Data user dengan sisa utang berhasil diambil",
-      data: {
-        items: result,
-      },
-    });
-  } catch (err) {
-    console.error("GET /users/with-debt error:", err);
     next(err);
   }
 };

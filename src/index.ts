@@ -57,7 +57,7 @@ app.use(
       "X-Requested-With",
     ],
     credentials: true,
-  })
+  }),
 );
 
 // Debug logging (bisa dihapus setelah ok)
@@ -70,7 +70,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/debt", debtRoutes);
-app.use("/api/payment", paymentRoutes);
+app.use("/api/payments", paymentRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 
 // Only enabled Swagger in development

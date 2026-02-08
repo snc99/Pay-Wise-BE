@@ -1,5 +1,7 @@
 {
   "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
+    "@prisma/adapter-neon": "^7.3.0",
     "@prisma/client": "^6.10.0",
     "@upstash/redis": "^1.35.0",
     "bcrypt": "^6.0.0",

@@ -1,11 +1,12 @@
 import { Router } from "express";
-import {
-  getCards, // GET /api/dashboard/cards
-  getComparison, // GET /api/dashboard/compare
-  getDailyPaymentTrends, // GET /api/dashboard/trends/daily-payments
-} from "../controllers/dashboard.controller";
 import { authenticate } from "../middlewares/auth.middleware";
 import { authorizeRole } from "../middlewares/authorizeRole";
+import {
+  getDashboardOverview,
+  getDashboardStats,
+  getRecentPayments,
+  getTopDebtors,
+} from "../controllers/dashboard.controller";
 
 const router = Router();
 
@@ -34,7 +35,7 @@ const router = Router();
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get("/cards", authenticate, getCards);
+router.get("/stats", authenticate, getDashboardStats);
 
 /**
  * @swagger
@@ -61,7 +62,7 @@ router.get("/cards", authenticate, getCards);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get("/compare", authenticate, getComparison);
+router.get("/recent-payments", authenticate, getRecentPayments);
 
 /**
  * @swagger
@@ -84,6 +85,8 @@ router.get("/compare", authenticate, getComparison);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get("/trends/daily-payments", authenticate, getDailyPaymentTrends);
+router.get("/top-debtors", authenticate, getTopDebtors);
+
+router.get("/overview", authenticate, getDashboardOverview);
 
 export default router;

@@ -1,76 +1,34 @@
 import { z } from "zod";
 
 // Untuk nominal amount
-const amountSchema = z.any().superRefine((val, ctx) => {
-  const raw = typeof val === "string" ? val.trim() : String(val);
-
-  // 1. Cek kosong
-  if (!raw) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Nominal tidak boleh kosong.",
-    });
-    return;
-  }
-
-  // 2. Cek angka valid
-  if (isNaN(Number(raw))) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Nominal harus berupa angka.",
-    });
-    return;
-  }
-
-  // 3. Cek positif
-  if (Number(raw) <= 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Nominal harus lebih dari 0.",
-    });
-  }
-});
+const amountSchema = z.preprocess(
+  (val) => {
+    if (typeof val === "string") {
+      return val.replace(/\./g, "").replace(/,/g, ".");
+    }
+    return val;
+  },
+  z
+    .number({
+      required_error: "Nominal wajib diisi",
+      invalid_type_error: "Nominal harus berupa angka",
+    })
+    .positive("Nominal harus lebih dari 0"),
+);
 
 // untuk date
 const dateSchema = z
-  .string({
-    required_error: "Tanggal wajib diisi.",
-    invalid_type_error: "Tanggal wajib berupa string.",
+  .string({ required_error: "Tanggal wajib diisi." })
+  .refine((val) => !isNaN(new Date(val).getTime()), {
+    message: "Format tanggal tidak valid.",
   })
-  .refine(
-    (val) => {
-      const parsed = new Date(val);
-      return !isNaN(parsed.getTime());
-    },
-    {
-      message: "Format tanggal tidak valid.",
-    }
-  )
-  .refine(
-    (val) => {
-      const inputDate = new Date(val);
-      const now = new Date();
-      return inputDate <= now;
-    },
-    {
-      message: "Tanggal tidak boleh lebih dari sekarang.",
-    }
-  );
+  .refine((val) => new Date(val) <= new Date(), {
+    message: "Tanggal tidak boleh di masa depan.",
+  });
 
-export const debtSchema = z
-  .object({
-    userId: z
-      .string({
-        required_error: "User wajib diisi.",
-        invalid_type_error: "User wajib berupa string.",
-      })
-      .min(1, "User wajib diisi."),
-
-    amount: amountSchema,
-    date: dateSchema,
-  })
-  .strict();
-
-export const deleteDebtParamsSchema = z.object({
-  id: z.string().min(1, "ID utang wajib diisi."),
+export const debtSchema = z.object({
+  userId: z.string().min(1, "User wajib diisi."),
+  amount: amountSchema,
+  date: dateSchema,
+  note: z.string().optional(),
 });

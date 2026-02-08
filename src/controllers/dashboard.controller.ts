@@ -1,186 +1,359 @@
-// controllers/dashboard.controller.ts
-import { NextFunction, Response } from "express";
-import { prisma } from "../prisma/client";
-import { AuthenticatedRequest } from "../middlewares/auth.middleware";
+// controllers/dashboardController.ts
+import { Request, Response } from "express";
+import { PrismaClient } from "@prisma/client";
 
-function formatDateISO(d: Date): string {
-  return d.toISOString().split("T")[0];
+const prisma = new PrismaClient();
+
+// Type untuk query parameters
+interface DashboardQuery {
+  period?:
+    | "today"
+    | "this_week"
+    | "this_month"
+    | "last_month"
+    | "this_year"
+    | "all";
+  limit?: string;
 }
 
-function buildDateRange(from: Date, to: Date): string[] {
-  const result: string[] = [];
-  const current = new Date(from);
-
-  while (current <= to) {
-    result.push(formatDateISO(current));
-    current.setDate(current.getDate() + 1);
-  }
-
-  return result;
-}
-
-/**
- * GET /api/dashboard/cards
- */
-export const getCards = async (
-  req: AuthenticatedRequest,
+// GET /api/dashboard/stats
+export const getDashboardStats = async (
+  req: Request<{}, {}, {}, DashboardQuery>,
   res: Response,
-  next: NextFunction
-): Promise<void> => {
+) => {
   try {
-    const totalUsers = await prisma.user.count();
+    const { period = "all" } = req.query;
 
-    const totalDebtsResult = await prisma.debt.aggregate({
-      _sum: { amount: true },
+    // Set date range berdasarkan period
+    const dateFilter = getDateRange(period);
+
+    // Hitung semua statistik secara paralel
+    const [
+      totalUsers,
+      totalDebt,
+      totalPaid,
+      activeCycles,
+      overdueCycles,
+      recentPaymentsCount,
+    ] = await Promise.all([
+      // 1. Total Users
+      prisma.user.count(),
+
+      // 2. Total Utang Aktif (isPaid = false)
+      prisma.debtCycle.aggregate({
+        where: { isPaid: false },
+        _sum: { total: true },
+      }),
+
+      // 3. Total Terbayar (dari Payment)
+      prisma.payment.aggregate({
+        where: dateFilter.payment
+          ? {
+              paidAt: dateFilter.payment,
+            }
+          : {},
+        _sum: { amount: true },
+      }),
+
+      // 4. Active Cycles (belum lunas)
+      prisma.debtCycle.count({
+        where: { isPaid: false },
+      }),
+
+      // 5. Overdue Cycles (belum lunas dan created lebih dari 30 hari)
+      prisma.debtCycle.count({
+        where: {
+          isPaid: false,
+          createdAt: {
+            lt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 hari lalu
+          },
+        },
+      }),
+
+      // 6. Recent Payments (7 hari terakhir)
+      prisma.payment.count({
+        where: {
+          paidAt: {
+            gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+          },
+        },
+      }),
+    ]);
+
+    const stats = {
+      totalUsers,
+      totalDebt: totalDebt._sum.total || 0,
+      totalPaid: totalPaid._sum.amount || 0,
+      pendingDebt: (totalDebt._sum.total || 0) - (totalPaid._sum.amount || 0),
+      activeCycles,
+      overdueCycles,
+      recentPaymentsCount,
+    };
+
+    res.json({
+      success: true,
+      data: stats,
+    });
+  } catch (error) {
+    console.error("Dashboard stats error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Gagal mengambil data dashboard",
+    });
+  }
+};
+
+// GET /api/dashboard/recent-payments
+export const getRecentPayments = async (
+  req: Request<{}, {}, {}, DashboardQuery>,
+  res: Response,
+) => {
+  try {
+    const { limit = "5" } = req.query;
+
+    const payments = await prisma.payment.findMany({
+      take: parseInt(limit),
+      orderBy: { paidAt: "desc" },
+      include: {
+        user: {
+          select: { name: true },
+        },
+        cycle: {
+          select: { total: true },
+        },
+      },
     });
 
-    const totalPaymentsResult = await prisma.payment.aggregate({
-      _sum: { amount: true },
-    });
+    const formattedPayments = payments.map((p) => ({
+      id: p.id,
+      user: p.user.name,
+      amount: p.amount,
+      paidAt: p.paidAt,
+      status: "paid",
+      totalDebt: p.cycle.total,
+    }));
 
-    const totalPaidUsers = await prisma.user.count({
+    res.json({
+      success: true,
+      data: formattedPayments,
+    });
+  } catch (error) {
+    console.error("Recent payments error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Gagal mengambil data pembayaran terbaru",
+    });
+  }
+};
+
+// GET /api/dashboard/top-debtors
+export const getTopDebtors = async (
+  req: Request<{}, {}, {}, DashboardQuery>,
+  res: Response,
+) => {
+  try {
+    const { limit = "5" } = req.query;
+
+    const topDebtors = await prisma.user.findMany({
       where: {
-        debts: { some: { payments: { some: {} } } },
+        cycles: {
+          some: {
+            isPaid: false,
+          },
+        },
+      },
+      include: {
+        cycles: {
+          where: { isPaid: false },
+          select: { total: true },
+        },
       },
     });
 
-    res.status(200).json({
-      success: true,
-      status: 200,
-      message: "Data dashboard berhasil diambil",
-      data: {
-        totalUsers,
-        totalDebts: Number(totalDebtsResult._sum.amount || 0),
-        totalPayments: Number(totalPaymentsResult._sum.amount || 0),
-        totalPaidUsers,
-      },
+    // Hitung total debt per user
+    const debtorsWithTotal = topDebtors.map((user) => {
+      const totalDebt = user.cycles.reduce(
+        (sum, cycle) => sum + cycle.total,
+        0,
+      );
+      return {
+        id: user.id,
+        name: user.name,
+        phone: user.phone,
+        totalDebt,
+        cyclesCount: user.cycles.length,
+      };
     });
-    return; // <<< IMPORTANT: do not return res
-  } catch (err) {
-    console.error("GET /api/dashboard/cards error:", err);
-    next(err);
+
+    // Sort dari debt terbesar
+    const sortedDebtors = debtorsWithTotal
+      .sort((a, b) => b.totalDebt - a.totalDebt)
+      .slice(0, parseInt(limit));
+
+    res.json({
+      success: true,
+      data: sortedDebtors,
+    });
+  } catch (error) {
+    console.error("Top debtors error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Gagal mengambil data top debtors",
+    });
   }
 };
 
-/**
- * GET /api/dashboard/compare
- */
-export const getComparison = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
+// GET /api/dashboard/overview
+export const getDashboardOverview = async (req: Request, res: Response) => {
   try {
-    const { from, to } = req.query as { from?: string; to?: string };
+    // Ambil semua data sekaligus untuk performa lebih baik
+    const [stats, recentPayments, topDebtors] = await Promise.all([
+      // Stats
+      (async () => {
+        const totalDebt = await prisma.debtCycle.aggregate({
+          where: { isPaid: false },
+          _sum: { total: true },
+        });
 
-    if (from || to) {
-      const fromDate = from ? new Date(String(from)) : new Date(0);
-      const toDate = to ? new Date(String(to)) : new Date();
+        const totalPaid = await prisma.payment.aggregate({
+          _sum: { amount: true },
+        });
 
-      const debtSum = await prisma.debt.aggregate({
-        _sum: { amount: true },
-        where: {
-          date: { gte: fromDate, lte: toDate },
+        return {
+          totalUsers: await prisma.user.count(),
+          totalDebt: totalDebt._sum.total || 0,
+          totalPaid: totalPaid._sum.amount || 0,
+          activeCycles: await prisma.debtCycle.count({
+            where: { isPaid: false },
+          }),
+          overdueCycles: await prisma.debtCycle.count({
+            where: {
+              isPaid: false,
+              createdAt: {
+                lt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+              },
+            },
+          }),
+        };
+      })(),
+
+      // Recent payments (5 terbaru)
+      prisma.payment.findMany({
+        take: 5,
+        orderBy: { paidAt: "desc" },
+        include: {
+          user: { select: { name: true } },
+          cycle: { select: { total: true } },
         },
-      });
+      }),
 
-      const paymentSum = await prisma.payment.aggregate({
-        _sum: { amount: true },
-        where: {
-          paidAt: { gte: fromDate, lte: toDate },
-        },
-      });
+      // Top debtors (5 teratas)
+      (async () => {
+        const users = await prisma.user.findMany({
+          where: {
+            cycles: { some: { isPaid: false } },
+          },
+          include: {
+            cycles: {
+              where: { isPaid: false },
+              select: { total: true },
+            },
+          },
+        });
 
-      res.status(200).json({
-        success: true,
-        status: 200,
-        message: "Data comparison berhasil diambil",
-        data: {
-          totalDebts: Number(debtSum._sum.amount || 0),
-          totalPayments: Number(paymentSum._sum.amount || 0),
-        },
-      });
-      return;
-    }
+        return users
+          .map((user) => ({
+            id: user.id,
+            name: user.name,
+            totalDebt: user.cycles.reduce((sum, cycle) => sum + cycle.total, 0),
+            cyclesCount: user.cycles.length,
+          }))
+          .sort((a, b) => b.totalDebt - a.totalDebt)
+          .slice(0, 5);
+      })(),
+    ]);
 
-    const totalDebts = await prisma.debt.aggregate({ _sum: { amount: true } });
-    const totalPayments = await prisma.payment.aggregate({
-      _sum: { amount: true },
-    });
+    const pendingDebt = stats.totalDebt - stats.totalPaid;
 
-    res.status(200).json({
+    const formattedPayments = recentPayments.map((p) => ({
+      id: p.id,
+      user: p.user.name,
+      amount: p.amount,
+      paidAt: p.paidAt,
+      status: "paid",
+      totalDebt: p.cycle.total,
+    }));
+
+    res.json({
       success: true,
-      status: 200,
-      message: "Data comparison berhasil diambil",
       data: {
-        totalDebts: Number(totalDebts._sum.amount || 0),
-        totalPayments: Number(totalPayments._sum.amount || 0),
+        stats: {
+          ...stats,
+          pendingDebt,
+        },
+        recentPayments: formattedPayments,
+        topDebtors,
       },
     });
-    return;
-  } catch (err) {
-    console.error("GET /api/dashboard/compare error:", err);
-    next(err);
-  }
-};
-
-/**
- * GET /api/dashboard/trends/daily-payments
- */
-export const getDailyPaymentTrends = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const daysParam = req.query.days ? Number(req.query.days) : undefined;
-    const fromQuery = req.query.from as string | undefined;
-    const toQuery = req.query.to as string | undefined;
-
-    let fromDate: Date;
-    let toDate: Date = new Date();
-
-    if (fromQuery && toQuery) {
-      fromDate = new Date(fromQuery);
-      toDate = new Date(toQuery);
-    } else if (fromQuery) {
-      fromDate = new Date(fromQuery);
-    } else if (daysParam && daysParam > 0) {
-      fromDate = new Date();
-      fromDate.setDate(toDate.getDate() - (daysParam - 1));
-    } else {
-      fromDate = new Date();
-      fromDate.setDate(toDate.getDate() - 6);
-    }
-
-    fromDate.setHours(0, 0, 0, 0);
-    toDate.setHours(23, 59, 59, 999);
-
-    const rows: Array<{ day: string; total: string }> = await prisma.$queryRaw`
-      SELECT 
-        to_char(date_trunc('day', "paidAt")::date, 'YYYY-MM-DD') as day,
-        SUM("amount"::numeric)::text as total
-      FROM "Payment"
-      WHERE "paidAt" >= ${fromDate} AND "paidAt" <= ${toDate}
-      GROUP BY day
-      ORDER BY day ASC;
-    `;
-
-    const lookup = new Map<string, number>();
-    rows.forEach((r) => lookup.set(String(r.day), Number(r.total)));
-
-    const labels = buildDateRange(fromDate, toDate);
-    const data = labels.map((d) => lookup.get(d) ?? 0);
-
-    res.status(200).json({
-      success: true,
-      status: 200,
-      message: "Data pembayaran harian berhasil diambil",
-      data: { labels, data },
+  } catch (error) {
+    console.error("Dashboard overview error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Gagal mengambil data dashboard",
     });
-    return;
-  } catch (err) {
-    console.error("GET /api/dashboard/trends/daily-payments error:", err);
-    next(err);
   }
 };
+
+// Helper function untuk date range
+interface DateFilter {
+  payment?: {
+    gte?: Date;
+    lte?: Date;
+  };
+  debt?: {
+    gte?: Date;
+    lte?: Date;
+  };
+}
+
+function getDateRange(period: string = "all"): DateFilter {
+  const now = new Date();
+  let startDate: Date;
+
+  switch (period) {
+    case "today":
+      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      break;
+    case "this_week":
+      const day = now.getDay();
+      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+      startDate = new Date(now.setDate(diff));
+      break;
+    case "this_month":
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      break;
+    case "last_month":
+      startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const endDate = new Date(now.getFullYear(), now.getMonth(), 0);
+      return {
+        payment: {
+          gte: startDate,
+          lte: endDate,
+        },
+        debt: {
+          gte: startDate,
+          lte: endDate,
+        },
+      };
+    case "this_year":
+      startDate = new Date(now.getFullYear(), 0, 1);
+      break;
+    default: // 'all'
+      return {};
+  }
+
+  return {
+    payment: { gte: startDate },
+    debt: { gte: startDate },
+  };
+}

@@ -1,8 +1,7 @@
 import express from "express";
 import {
   createPayment,
-  deletePayment,
-  getDeletedPayments,
+  deleteCycle,
   getPayments,
 } from "../controllers/payment.controller";
 import { authenticate } from "../middlewares/auth.middleware";
@@ -53,44 +52,26 @@ router.post("/", authenticate, createPayment);
 
 /**
  * @swagger
- * /api/payment/{id}:
+ * /api/payment/{cycleId}:
  *   delete:
- *     summary: Hapus data payment
+ *     summary: Menghapus data payment
  *     tags: [Payment]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: path
- *         name: id
+ *         name: cycleId
  *         required: true
  *         schema:
  *           type: string
  *     responses:
  *       200:
- *        $ref: '#/components/responses/PaymentDeleteResponse'
- *       400:
- *         $ref: '#/components/responses/BadRequestError'
+ *         $ref: '#/components/responses/PaymentDeleteResponse'
  *       404:
  *         $ref: '#/components/responses/NotFoundError'
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.delete("/:id", authenticate, deletePayment);
-
-/**
- * @swagger
- * /api/payment/history:
- *   get:
- *     summary: Mendapatkan semua data payment history
- *     tags: [Summary]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         $ref: '#/components/responses/PaymentHistoryListResponse'
- *       500:
- *         $ref: '#/components/responses/InternalServerError'
- */
-router.get("/history", authenticate, getDeletedPayments);
+router.delete("/:cycleId", authenticate, deleteCycle);
 
 export default router;
