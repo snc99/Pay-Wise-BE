@@ -181,9 +181,13 @@ export const logout = async (
     }
 
     // ✅ CLEAR COOKIE - UPDATED
+    const isProd = process.env.NODE_ENV === "production";
+
     res.clearCookie("pw_token", {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
       path: "/",
-      sameSite: "lax", // ✅ TAMBAHKAN sameSite yang sama
     });
 
     res.json({ success: true, status: 200, message: "Logout berhasil" });
