@@ -14,7 +14,7 @@ const DEFAULT_COOKIE_TTL_SECONDS = 60 * 60 * 24; // 1 day fallback
 export const login = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -30,6 +30,7 @@ export const login = async (
   const { username, password } = parsed.data;
 
   try {
+    console.log("ENV NODE_ENV =", process.env.NODE_ENV);
     const result = await loginService(username, password);
 
     if (!result) {
@@ -81,7 +82,7 @@ export const login = async (
 export const getProfile = async (
   req: AuthenticatedRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   if (!req.user) {
     res.status(401).json({
@@ -127,7 +128,7 @@ export const getProfile = async (
 export const logout = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const cookieToken = (req as any).cookies?.pw_token;
