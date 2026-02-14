@@ -58,10 +58,12 @@ export const login = async (
     }
 
     // ✅ SET COOKIE - UPDATED
+    const isProd = process.env.NODE_ENV === "production";
+
     res.cookie("pw_token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // true di production, false di dev
-      sameSite: "lax", // ✅ UBAH dari "none" ke "lax"
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
       path: "/",
       maxAge: maxAgeMs,
     });
@@ -133,6 +135,7 @@ export const logout = async (
   try {
     const cookieToken = (req as any).cookies?.pw_token;
     const authHeader = req.headers.authorization;
+    const isProd = process.env.NODE_ENV === "production";
     const headerToken =
       authHeader &&
       typeof authHeader === "string" &&
@@ -142,14 +145,12 @@ export const logout = async (
 
     const token = cookieToken ?? headerToken;
 
-    if (!token) {
-      res.clearCookie("pw_token", {
-        path: "/",
-        sameSite: "lax",
-      });
-      res.json({ success: true, status: 200, message: "Logged out" });
-      return;
-    }
+    res.clearCookie("pw_token", {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
+      path: "/",
+    });
 
     let decoded: any = null;
     try {
@@ -181,8 +182,6 @@ export const logout = async (
     }
 
     // ✅ CLEAR COOKIE - UPDATED
-    const isProd = process.env.NODE_ENV === "production";
-
     res.clearCookie("pw_token", {
       httpOnly: true,
       secure: isProd,
