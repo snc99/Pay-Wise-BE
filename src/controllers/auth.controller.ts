@@ -3,7 +3,6 @@ import { prisma } from "../prisma/client";
 import jwt from "jsonwebtoken";
 import { NextFunction, Request, Response } from "express";
 import { redis } from "../utils/redis";
-import { generateToken } from "../utils/jwt";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware";
 import { removeToken } from "../utils/removeToken";
 import { loginSchema } from "../validations/auth.schema";
@@ -14,7 +13,7 @@ const DEFAULT_COOKIE_TTL_SECONDS = 60 * 60 * 24; // 1 day fallback
 export const login = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -57,10 +56,12 @@ export const login = async (
     }
 
     // ✅ SET COOKIE - UPDATED
+    const isProd = process.env.NODE_ENV === "production";
+
     res.cookie("pw_token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // true di production, false di dev
-      sameSite: "lax", // ✅ UBAH dari "none" ke "lax"
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
       path: "/",
       maxAge: maxAgeMs,
     });
@@ -81,7 +82,7 @@ export const login = async (
 export const getProfile = async (
   req: AuthenticatedRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   if (!req.user) {
     res.status(401).json({
@@ -127,7 +128,7 @@ export const getProfile = async (
 export const logout = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
   try {
     const cookieToken = (req as any).cookies?.pw_token;
@@ -142,9 +143,12 @@ export const logout = async (
     const token = cookieToken ?? headerToken;
 
     if (!token) {
+      const isProd = process.env.NODE_ENV === "production";
+
       res.clearCookie("pw_token", {
         path: "/",
-        sameSite: "lax",
+        secure: isProd,
+        sameSite: isProd ? "none" : "lax",
       });
       res.json({ success: true, status: 200, message: "Logged out" });
       return;
