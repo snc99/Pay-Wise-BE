@@ -105,9 +105,9 @@ Masuk ke riwayat payment & dashboard
 - Express
 - TypeScript
 - Prisma ORM
-- PostgreSQL / MySQL (tergantung config)
-- Redis
-- JWT
+- **Neon PostgreSQL**
+- **Redis**
+- **JWT**
 - Zod Validation
 - Swagger / OpenAPI
 
@@ -222,11 +222,12 @@ npm run dev
 ## 🛡️ Engineering Decisions
 
 - **Cookie httpOnly** → aman dari XSS
-- **Blacklist Redis** → token revoke real time
-- **Transaction Prisma** → hindari data korup
+- **Redis blacklist** → token revoke real time
+- **Prisma transaction** → hindari data korup
 - **Single active cycle** → simplify accounting
 - **Parallel aggregation** → dashboard cepat
 - **Zod** → validasi konsisten & type safe
+- **Neon serverless database** → scalable & cloud native
 
 ---
 
