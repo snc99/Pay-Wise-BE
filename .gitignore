@@ -1,10 +1,11 @@
 node_modules/
 .env
+.env.*
 dist/
 build/
 *.log
 npm-debug.log*
 .DS_Store
 .next/
-.notes
+notes
 out/

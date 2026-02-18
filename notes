@@ -1,0 +1,18 @@
+# untuk migrasi ulang ke neon db
+
+npx prisma migrate dev --name init
+
+# Untuk menjalankan seed
+
+npx prisma db seed
+
+DATABASE_URL="postgresql://neondb_owner:npg_yAL6oPkpGi7D@ep-dry-math-a8lhvbfs-pooler.eastus2.azure.neon.tech/prisma_migrate_shadow_db_241e0f07-e395-488f-a6b6-13ca283c8579?sslmode=require&channel_binding=require"
+DIRECT_URL="postgresql://neondb_owner:npg_yAL6oPkpGi7D@ep-dry-math-a8lhvbfs.eastus2.azure.neon.tech/prisma_migrate_shadow_db_241e0f07-e395-488f-a6b6-13ca283c8579?sslmode=require&channel_binding=require"
+
+UPSTASH_REDIS_REST_URL=https://welcomed-emu-18785.upstash.io
+UPSTASH_REDIS_REST_TOKEN=AUlhAAIncDIxYTI5NmZjOGE4OTk0MDgwOTk1YzE5ZjBmYTFiNGRjZnAyMTg3ODU
+
+SERVER_URL=https://pay-wise-be.up.railway.app
+FRONTEND_URLS=http://localhost:3000
+
+JWT_SECRET=Irvansandy123@
