@@ -1,6 +1,0 @@
-# untuk migrasi ulang ke neon db
-npx prisma migrate dev --name init
-
-# Untuk menjalankan seed 
-npx prisma db seed
-
