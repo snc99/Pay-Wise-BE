@@ -8,4 +8,5 @@ npm-debug.log*
 .DS_Store
 .next/
 notes
+test
 out/
